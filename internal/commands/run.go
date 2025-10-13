@@ -6,6 +6,7 @@ import (
 
 	"github.com/alpen/alpen-cli/internal/config"
 	"github.com/alpen/alpen-cli/internal/executor"
+	"github.com/alpen/alpen-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -58,14 +59,36 @@ func runScript(cmd *cobra.Command, cfg *config.Config, deps Dependencies, args [
 		DryRun:     dryRun,
 	}
 
+	writer := cmd.OutOrStdout()
+
+	if dryRun {
+		fmt.Fprintln(writer, "")
+		ui.Info(writer, "Dry-run 模式: %s/%s", groupName, scriptName)
+		ui.Separator(writer)
+	} else {
+		fmt.Fprintln(writer, "")
+		ui.Executing(writer, fmt.Sprintf("%s/%s", groupName, scriptName))
+		ui.Separator(writer)
+	}
+
 	result, err := deps.Executor.Execute(cmd.Context(), req)
+
+	if !dryRun {
+		fmt.Fprintln(writer, "")
+		ui.Separator(writer)
+	}
+
 	if err != nil {
+		ui.Error(writer, "脚本执行失败")
+		ui.Duration(writer, result.Duration.String())
 		return err
 	}
+
 	if !dryRun {
-		fmt.Fprintf(cmd.OutOrStdout(), "脚本 %s/%s 执行完成，耗时 %s\n", groupName, scriptName, result.Duration)
+		ui.Success(writer, "脚本执行完成")
+		ui.Duration(writer, result.Duration.String())
 	} else {
-		fmt.Fprintf(cmd.OutOrStdout(), "脚本 %s/%s dry-run 模式下已打印执行计划\n", groupName, scriptName)
+		ui.Success(writer, "Dry-run 模式完成")
 	}
 	return nil
 }

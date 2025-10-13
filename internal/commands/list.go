@@ -3,9 +3,9 @@ package commands
 import (
 	"fmt"
 	"sort"
-	"text/tabwriter"
 
 	"github.com/alpen/alpen-cli/internal/config"
+	"github.com/alpen/alpen-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -28,14 +28,24 @@ func NewListCommand(deps Dependencies) *cobra.Command {
 }
 
 func renderList(cmd *cobra.Command, cfg *config.Config, filter string) error {
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 2, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "组\t脚本\t描述")
+	writer := cmd.OutOrStdout()
 
 	groupNames := make([]string, 0, len(cfg.Groups))
 	for name := range cfg.Groups {
 		groupNames = append(groupNames, name)
 	}
 	sort.Strings(groupNames)
+
+	if len(groupNames) == 0 {
+		ui.Warning(writer, "当前配置未定义任何脚本组")
+		return nil
+	}
+
+	fmt.Fprintln(writer, "")
+	ui.Title(writer, "可用脚本列表")
+	ui.Separator(writer)
+
+	foundAny := false
 	for _, groupName := range groupNames {
 		if filter != "" && filter != groupName {
 			continue
@@ -46,10 +56,39 @@ func renderList(cmd *cobra.Command, cfg *config.Config, filter string) error {
 			scriptNames = append(scriptNames, name)
 		}
 		sort.Strings(scriptNames)
+
+		if len(scriptNames) == 0 {
+			continue
+		}
+
+		foundAny = true
+		fmt.Fprintln(writer, "")
+		fmt.Fprintf(writer, "%s %s\n", ui.Cyan("▶"), ui.Highlight(groupName))
+		if group.Description != "" {
+			fmt.Fprintf(writer, "  %s\n", ui.Gray(group.Description))
+		}
+		fmt.Fprintln(writer, "")
+
 		for _, scriptName := range scriptNames {
 			script := group.Scripts[scriptName]
-			fmt.Fprintf(w, "%s\t%s\t%s\n", groupName, scriptName, script.Description)
+			desc := script.Description
+			if desc == "" {
+				desc = ui.Gray("(无描述)")
+			} else {
+				desc = ui.Gray(desc)
+			}
+			fmt.Fprintf(writer, "  • %s  %s\n", ui.Cyan(groupName+"/"+scriptName), desc)
 		}
 	}
-	return w.Flush()
+
+	if !foundAny {
+		if filter != "" {
+			ui.Warning(writer, "分组 '%s' 不存在或没有脚本", filter)
+		} else {
+			ui.Warning(writer, "当前配置未定义任何脚本")
+		}
+	}
+
+	fmt.Fprintln(writer, "")
+	return nil
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/alpen/alpen-cli/internal/config"
 	"github.com/alpen/alpen-cli/internal/executor"
+	"github.com/alpen/alpen-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -71,7 +72,7 @@ func newMenuCommand(menuKey string, deps Dependencies) *cobra.Command {
 				return err
 			}
 			if len(entries) == 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "菜单 %s 当前未配置任何脚本。\n", menu.Key)
+				ui.Warning(cmd.OutOrStdout(), "菜单 %s 当前未配置任何脚本", menu.Key)
 				return nil
 			}
 			if len(args) > 0 {
@@ -89,14 +90,15 @@ func newMenuCommand(menuKey string, deps Dependencies) *cobra.Command {
 
 func showTopLevelMenu(cmd *cobra.Command, cfg *config.Config, deps Dependencies) error {
 	if len(cfg.Menus) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "当前配置未定义菜单，可使用 alpen list 查看脚本列表。")
+		ui.Warning(cmd.OutOrStdout(), "当前配置未定义菜单，可使用 %s 查看脚本列表", ui.Cyan("alpen list"))
 		return nil
 	}
 	reader := bufio.NewReader(cmd.InOrStdin())
 	writer := cmd.OutOrStdout()
 
 	for {
-		fmt.Fprintln(writer, "请选择需要进入的菜单（输入序号或菜单 key，输入 q 退出）：")
+		fmt.Fprintln(writer, "")
+		ui.MenuTitle(writer, "Alpen CLI 主菜单")
 		for i, menu := range cfg.Menus {
 			desc := strings.TrimSpace(menu.Description)
 			if desc == "" {
@@ -105,8 +107,10 @@ func showTopLevelMenu(cmd *cobra.Command, cfg *config.Config, deps Dependencies)
 			if desc == "" {
 				desc = "未提供描述"
 			}
-			fmt.Fprintf(writer, "  %d. alpen %s - %s\n", i+1, menu.Key, desc)
+			ui.MenuItem(writer, i+1, fmt.Sprintf("alpen %s", menu.Key), desc)
 		}
+		fmt.Fprintln(writer, "")
+		ui.Prompt(writer, "请选择菜单 (输入序号/key 或 'q' 退出): ")
 		input, err := readLine(reader)
 		if err != nil {
 			return nil
@@ -117,7 +121,7 @@ func showTopLevelMenu(cmd *cobra.Command, cfg *config.Config, deps Dependencies)
 		}
 		lower := strings.ToLower(choice)
 		if lower == "q" || lower == "quit" || lower == "exit" {
-			fmt.Fprintln(writer, "已退出菜单。")
+			ui.Info(writer, "已退出菜单")
 			return nil
 		}
 		if idx, err := strconv.Atoi(choice); err == nil {
@@ -125,7 +129,7 @@ func showTopLevelMenu(cmd *cobra.Command, cfg *config.Config, deps Dependencies)
 				menu := cfg.Menus[idx-1]
 				return enterMenu(cmd, cfg, &menu, deps)
 			}
-			fmt.Fprintln(writer, "序号超出范围，请重新选择。")
+			ui.Error(writer, "序号超出范围 (1-%d)，请重新选择", len(cfg.Menus))
 			continue
 		}
 		if strings.HasPrefix(lower, "alpen ") {
@@ -133,7 +137,7 @@ func showTopLevelMenu(cmd *cobra.Command, cfg *config.Config, deps Dependencies)
 		}
 		menu, err := cfg.FindMenu(choice)
 		if err != nil {
-			fmt.Fprintln(writer, "未找到对应菜单，请重新输入。")
+			ui.Error(writer, "未找到菜单 '%s'，请输入有效的序号或 key", choice)
 			continue
 		}
 		return enterMenu(cmd, cfg, menu, deps)
@@ -145,15 +149,13 @@ func runMenuInteractive(cmd *cobra.Command, menu *config.Menu, entries []menuEnt
 	reader := bufio.NewReader(cmd.InOrStdin())
 
 	for {
-		fmt.Fprintf(writer, "菜单 %s - %s\n", menu.Key, displayMenuTitle(menu))
+		fmt.Fprintln(writer, "")
+		ui.MenuTitle(writer, fmt.Sprintf("%s - %s", menu.Key, displayMenuTitle(menu)))
 		for i, entry := range entries {
-			line := entry.Label
-			if strings.TrimSpace(entry.Description) != "" && strings.TrimSpace(entry.Description) != strings.TrimSpace(entry.Label) {
-				line = fmt.Sprintf("%s - %s", entry.Label, entry.Description)
-			}
-			fmt.Fprintf(writer, "  %d. %s\n", i+1, line)
+			ui.MenuItem(writer, i+1, entry.Label, entry.Description)
 		}
-		fmt.Fprint(writer, "请输入序号、别名或 q 退出：")
+		fmt.Fprintln(writer, "")
+		ui.Prompt(writer, "请输入序号/别名 (或 'q' 退出): ")
 		input, err := readLine(reader)
 		if err != nil {
 			return nil
@@ -164,7 +166,7 @@ func runMenuInteractive(cmd *cobra.Command, menu *config.Menu, entries []menuEnt
 		}
 		lower := strings.ToLower(choice)
 		if lower == "q" || lower == "quit" || lower == "exit" {
-			fmt.Fprintf(writer, "已退出菜单 %s。\n", menu.Key)
+			ui.Info(writer, "已退出菜单 %s", menu.Key)
 			return nil
 		}
 		if idx, err := strconv.Atoi(choice); err == nil {
@@ -172,16 +174,20 @@ func runMenuInteractive(cmd *cobra.Command, menu *config.Menu, entries []menuEnt
 				entry := entries[idx-1]
 				return executeMenuEntry(cmd, deps, entry, nil)
 			}
-			fmt.Fprintln(writer, "序号超出范围，请重新输入。")
+			ui.Error(writer, "序号超出范围 (1-%d)，请重新输入", len(entries))
 			continue
 		}
 		// 尝试匹配别名
+		matched := false
 		for _, entry := range entries {
 			if remaining, ok := entry.Match(strings.Fields(choice)); ok {
+				matched = true
 				return executeMenuEntry(cmd, deps, entry, remaining)
 			}
 		}
-		fmt.Fprintln(writer, "未匹配到菜单项，请重新输入。")
+		if !matched {
+			ui.Error(writer, "未匹配到菜单项 '%s'，请重新输入", choice)
+		}
 	}
 }
 
@@ -197,11 +203,25 @@ func executeMenuEntry(cmd *cobra.Command, deps Dependencies, entry menuEntry, ex
 		ExtraArgs:  args,
 		ExtraEnv:   map[string]string{},
 	}
+
+	writer := cmd.OutOrStdout()
+	fmt.Fprintln(writer, "")
+	ui.Executing(writer, fmt.Sprintf("%s/%s", req.GroupName, req.ScriptName))
+	ui.Separator(writer)
+
 	result, err := deps.Executor.Execute(cmd.Context(), req)
 	if err != nil {
+		fmt.Fprintln(writer, "")
+		ui.Separator(writer)
+		ui.Error(writer, "脚本执行失败")
+		ui.Duration(writer, result.Duration.String())
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "脚本 %s/%s 执行完成，耗时 %s\n", req.GroupName, req.ScriptName, result.Duration)
+
+	fmt.Fprintln(writer, "")
+	ui.Separator(writer)
+	ui.Success(writer, "脚本执行完成")
+	ui.Duration(writer, result.Duration.String())
 	return nil
 }
 
@@ -366,7 +386,7 @@ func enterMenu(cmd *cobra.Command, cfg *config.Config, menu *config.Menu, deps D
 		return err
 	}
 	if len(entries) == 0 {
-		fmt.Fprintf(cmd.OutOrStdout(), "菜单 %s 当前未配置任何脚本。\n", menu.Key)
+		ui.Warning(cmd.OutOrStdout(), "菜单 %s 当前未配置任何脚本", menu.Key)
 		return nil
 	}
 	return runMenuInteractive(cmd, menu, entries, deps)

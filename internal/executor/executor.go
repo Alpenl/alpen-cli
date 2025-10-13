@@ -14,6 +14,7 @@ import (
 	"github.com/alpen/alpen-cli/internal/config"
 	"github.com/alpen/alpen-cli/internal/lifecycle"
 	"github.com/alpen/alpen-cli/internal/plugins"
+	"github.com/alpen/alpen-cli/internal/ui"
 )
 
 // Executor 负责执行脚本命令，并在执行前后触发生命周期事件
@@ -67,7 +68,16 @@ func (e *Executor) Execute(ctx context.Context, req ScriptRequest) (Result, erro
 		return Result{}, err
 	}
 	if req.DryRun {
-		e.logger.Printf("跳过执行（dry-run）: %s/%s -> %s %s", req.GroupName, req.ScriptName, req.Template.Command, strings.Join(req.ExtraArgs, " "))
+		fmt.Printf("%s %s\n", ui.Gray("命令:"), ui.Cyan(req.Template.Command))
+		if len(req.ExtraArgs) > 0 {
+			fmt.Printf("%s %s\n", ui.Gray("参数:"), ui.Cyan(strings.Join(req.ExtraArgs, " ")))
+		}
+		if len(envMap) > 0 {
+			fmt.Println(ui.Gray("环境变量:"))
+			for k, v := range req.Template.Env {
+				fmt.Printf("  %s=%s\n", ui.Yellow(k), ui.Gray(v))
+			}
+		}
 		return Result{ExitCode: 0}, nil
 	}
 	payload.StartAt = time.Now()
@@ -85,7 +95,6 @@ func (e *Executor) Execute(ctx context.Context, req ScriptRequest) (Result, erro
 		cmd.Dir = req.WorkingDir
 	}
 
-	e.logger.Printf("开始执行: %s", combinedCommand)
 	err := cmd.Run()
 	payload.EndAt = time.Now()
 	result.Duration = payload.EndAt.Sub(payload.StartAt)
@@ -112,7 +121,6 @@ func (e *Executor) Execute(ctx context.Context, req ScriptRequest) (Result, erro
 	if err := e.plugins.Emit(ctx, lifecycle.EventAfterExecute, payload); err != nil {
 		return result, err
 	}
-	e.logger.Printf("执行完成，耗时 %s", result.Duration)
 	return result, nil
 }
 

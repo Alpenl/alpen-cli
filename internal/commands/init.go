@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/alpen/alpen-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -36,13 +37,25 @@ func initScripts(baseDir string, force bool, cmd *cobra.Command) error {
 		return fmt.Errorf("创建目录 %s 失败: %w", scriptsDir, err)
 	}
 	targetFile := filepath.Join(scriptsDir, "scripts.yaml")
+
+	writer := cmd.OutOrStdout()
+
 	if _, err := os.Stat(targetFile); err == nil && !force {
+		ui.Error(writer, "配置文件已存在: %s", targetFile)
+		ui.Info(writer, "使用 %s 可覆盖已有文件", ui.Highlight("--force"))
 		return fmt.Errorf("文件 %s 已存在，如需覆盖请使用 --force", targetFile)
 	}
+
 	if err := os.WriteFile(targetFile, []byte(defaultConfigTemplate), 0o644); err != nil {
 		return fmt.Errorf("写入配置文件失败: %w", err)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "已生成示例配置: %s\n", targetFile)
+
+	fmt.Fprintln(writer, "")
+	ui.Success(writer, "已生成示例配置文件")
+	fmt.Fprintf(writer, "  %s %s\n", ui.Gray("位置:"), ui.Cyan(targetFile))
+	fmt.Fprintln(writer, "")
+	ui.Info(writer, "可使用 %s 查看脚本列表", ui.Highlight("alpen list"))
+	ui.Info(writer, "或直接运行 %s 进入交互菜单", ui.Highlight("alpen"))
 	return nil
 }
 
