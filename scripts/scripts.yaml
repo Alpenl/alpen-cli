@@ -1,0 +1,37 @@
+groups:
+  linux-init:
+    description: Linux 初始化命令
+    scripts:
+      update-system:
+        command: sudo apt update && sudo apt upgrade -y
+        description: 更新系统软件包
+      install-build-essential:
+        command: sudo apt install -y build-essential
+        description: 安装基础编译工具链
+  linux-tools:
+    description: 常用 Linux 工具脚本
+    scripts:
+      codex-install:
+        command: npm i -g @openai/codex
+        description: 安装 Codex CLI（npm 全局安装）
+      codex-run:
+        command: codex --dangerously-bypass-approvals-and-sandbox
+        description: 运行 Codex CLI（启动时跳过审批）
+
+menus:
+  - key: "a"
+    title: Linux 初始化命令
+    description: 常用的初始化与环境准备动作
+    group: linux-init
+  - key: "b"
+    title: 常用 Linux 命令
+    description: 常见工具与脚本快捷入口
+    items:
+      - key: "codex -i"
+        label: 安装 Codex CLI
+        script: linux-tools/codex-install
+        aliases:
+          - codex install
+      - key: "codex"
+        label: 运行 Codex CLI
+        script: linux-tools/codex-run

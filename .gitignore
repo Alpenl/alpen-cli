@@ -1,0 +1,25 @@
+# Go 编译产物
+dist/
+/alpen-cli
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go 构建中间文件
+*.test
+*.out
+*.cover
+/coverage/
+
+# IDE / 编辑器配置
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 日志与缓存
+*.log
+tmp/
+cache/
