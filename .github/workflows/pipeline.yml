@@ -13,6 +13,11 @@ on:
     branches: [main, dev]
   workflow_dispatch:
 
+# GitHub Actions 权限配置
+permissions:
+  contents: write  # 允许创建 Release
+  packages: write  # 允许上传构建产物
+
 jobs:
   # ============================================
   # Job 1: 代码质量检查 (总是运行)
