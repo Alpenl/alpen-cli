@@ -1,31 +1,52 @@
 # Alpen CLI
 
-Alpen CLI 是一个“配置即命令树”的统一脚本入口，使用 Go + Cobra 构建，通过 YAML 描述 CLI 结构即可生成完整的命令体验。与传统的“脚本列表 + 菜单”模式相比，重构后的版本直接将配置映射为命令层级，极大提升了可读性、可扩展性与上手速度。
+Alpen CLI 是一个"配置即命令树"的统一脚本入口，使用 Go + Cobra 构建，通过 YAML 描述 CLI 结构即可生成完整的命令体验。与传统的"脚本列表 + 菜单"模式相比，重构后的版本直接将配置映射为命令层级，极大提升了可读性、可扩展性与上手速度。
+
+## 安装
+
+### 一键安装（推荐）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/alpenl/alpen-cli/main/install.sh | sudo bash
+```
+
+### 手动安装
+
+1. 前往 [Releases 页面](https://github.com/alpenl/alpen-cli/releases/latest) 下载最新的 `.deb` 包
+2. 安装：
+   ```bash
+   sudo dpkg -i alpen-cli_*.deb
+   sudo apt-get install -f  # 如有依赖问题
+   ```
+
+### 从源码构建
+
+```bash
+git clone https://github.com/alpenl/alpen-cli.git
+cd alpen-cli
+go build -o alpen .
+sudo mv alpen /usr/bin/
+```
 
 ## 快速开始
 
 ```bash
-# 拉取依赖并编译
-go mod tidy
-go build -o dist/alpen
-
 # 初始化命令配置（默认写入 ~/.alpen/config/demo.yaml，生成示例脚本）
-./dist/alpen init
+alpen init
 
 # 查看动态生成的命令
-./dist/alpen help
+alpen help
 
 # 使用交互式菜单快速体验
-./dist/alpen interactive
+alpen interactive
 
 # 直接运行常用命令
-./dist/alpen ls
-./dist/alpen <your-command>
-./dist/alpen <your-command> <action>
+alpen ls
+alpen <your-command>
+alpen <your-command> <action>
 ```
 
-> 提示：平时可直接运行 `dist/alpen`；`go run .` 适合临时调试。
-> 环境变量 `ALPEN_HOME` 会在 CLI 启动时自动注入，指向 `~/.alpen` 目录，可在脚本与配置中复用。
+> 提示：环境变量 `ALPEN_HOME` 会在 CLI 启动时自动注入，指向 `~/.alpen` 目录，可在脚本与配置中复用。
 
 ## 命令模型概览
 

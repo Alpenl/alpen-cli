@@ -41,3 +41,4 @@ debian/*.log
 *.tar.xz
 *.tar.gz
 alpen-cli-*/
+docs/
