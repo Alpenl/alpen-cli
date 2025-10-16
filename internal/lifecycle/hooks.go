@@ -18,14 +18,15 @@ const (
 
 // Context 提供事件处理所需的上下文信息
 type Context struct {
-	ScriptName string
-	GroupName  string
-	Command    string
-	Args       []string
-	Env        map[string]string
-	StartAt    time.Time
-	EndAt      time.Time
-	Err        error
+	CommandPath []string
+	ScriptName  string
+	GroupName   string
+	Command     string
+	Args        []string
+	Env         map[string]string
+	StartAt     time.Time
+	EndAt       time.Time
+	Err         error
 }
 
 // Handler 定义事件处理函数签名

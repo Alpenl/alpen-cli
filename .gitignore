@@ -23,3 +23,21 @@ Thumbs.db
 *.log
 tmp/
 cache/
+.env
+docs/一些想法
+docs/go
+.alpen/
+
+# Debian 打包临时文件
+debian/files
+debian/.debhelper/
+debian/alpen-cli/
+debian/*.substvars
+debian/*.log
+*.deb
+*.dsc
+*.changes
+*.buildinfo
+*.tar.xz
+*.tar.gz
+alpen-cli-*/

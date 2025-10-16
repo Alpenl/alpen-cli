@@ -4,10 +4,11 @@ import (
 	"log"
 	"os"
 
+	"github.com/spf13/cobra"
+
 	"github.com/alpen/alpen-cli/internal/config"
 	"github.com/alpen/alpen-cli/internal/executor"
 	"github.com/alpen/alpen-cli/internal/plugins"
-	"github.com/spf13/cobra"
 )
 
 // Dependencies 用于在命令之间共享核心组件
@@ -24,8 +25,9 @@ func Register(root *cobra.Command, deps Dependencies) {
 	if deps.Logger == nil {
 		deps.Logger = log.New(os.Stdout, "[alpen] ", log.LstdFlags)
 	}
-	root.AddCommand(NewListCommand(deps))
-	root.AddCommand(NewRunCommand(deps))
 	root.AddCommand(NewInitCommand(deps))
-	BindRootMenu(root, deps)
+	root.AddCommand(NewEnvCommand(deps))
+	root.AddCommand(NewUICommand(deps))
+	root.AddCommand(NewListCommand(deps))
+	root.AddCommand(NewScriptCommand(deps))
 }

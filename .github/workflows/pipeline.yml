@@ -1,0 +1,145 @@
+name: CI/CD Pipeline
+
+# 触发条件:
+# 1. Push 到 main/dev 分支 - 运行完整质量检查,dev 分支额外构建测试包
+# 2. Pull Request 到 main/dev - 运行完整质量检查
+# 3. 推送版本标签 (v*) - 运行检查 + 构建正式发布包
+# 4. 手动触发 (workflow_dispatch) - 运行完整流程
+on:
+  push:
+    branches: [main, dev]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+jobs:
+  # ============================================
+  # Job 1: 代码质量检查 (总是运行)
+  # ============================================
+  quality-check:
+    name: 代码质量检查
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+
+      - name: 🔧 设置 Go 环境
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.1'  # 与 go.mod 保持一致
+          cache: true
+
+      - name: 📝 检查代码格式
+        run: |
+          files=$(gofmt -l .)
+          if [ -n "$files" ]; then
+            echo "❌ 请运行 gofmt 修复以下文件:"
+            echo "$files"
+            exit 1
+          fi
+          echo "✅ 代码格式检查通过"
+
+      - name: 🔍 静态代码检查
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: v1.61  # 支持 Go 1.23
+          args: --timeout=5m
+
+      - name: 🧪 运行单元测试
+        run: go test -v ./...
+
+  # ============================================
+  # Job 2: 构建 Debian 软件包
+  # 条件: dev 分支 push 或版本标签 push 或手动触发
+  # ============================================
+  build-deb:
+    name: 构建 Debian 软件包
+    needs: quality-check  # 依赖质量检查通过
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.ref == 'refs/heads/dev' ||
+      startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+
+    env:
+      GOFLAGS: "-mod=mod"
+      # Debian 包构建环境变量
+      DEBEMAIL: "ci@alpen.dev"
+      DEBFULLNAME: "Alpen CI Bot"
+
+    steps:
+      - name: 📥 检出代码仓库
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整历史,便于版本号处理
+
+      - name: 🔧 设置 Go 开发环境
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.1'
+          cache: true
+
+      - name: 📦 安装 Debian 打包依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            debhelper \
+            devscripts \
+            lintian \
+            fakeroot
+
+      - name: ⬇️  下载 Go 模块依赖
+        run: go mod download
+
+      - name: 🏗️  构建 Debian 软件包
+        run: |
+          echo "开始构建 Debian 包..."
+          dpkg-buildpackage -us -uc -b
+          echo "构建完成!"
+          echo "移动构建产物到工作目录..."
+          mv ../*.deb ../*.changes ../*.buildinfo . 2>/dev/null || true
+          ls -lh *.deb
+
+      - name: ✅ Debian 包质量检查
+        continue-on-error: true
+        run: |
+          echo "执行 lintian 质量检查..."
+          lintian --info *.changes || true
+
+      - name: 📤 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian-packages-${{ github.sha }}
+          path: |
+            *.deb
+            *.changes
+            *.buildinfo
+          retention-days: 30
+
+      # 仅在标签推送时创建 GitHub Release
+      - name: 🚀 创建 GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.deb"
+          body: |
+            ## Alpen CLI ${{ github.ref_name }}
+
+            ### 安装方法
+            ```bash
+            # 下载 .deb 文件后执行:
+            sudo dpkg -i alpen-cli_*.deb
+
+            # 如有依赖问题,运行:
+            sudo apt-get install -f
+            ```
+
+            ### 验证安装
+            ```bash
+            alpen --version
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

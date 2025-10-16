@@ -1,0 +1,24 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - govet
+    - gosimple
+    - staticcheck
+    - errcheck
+    - ineffassign
+    - gofmt
+    - goimports
+
+linters-settings:
+  gofmt:
+    simplify: true
+  goimports:
+    local-prefixes: github.com/alpen/alpen-cli
+  govet:
+    # 禁用 printf 检查,因为项目中使用了包装函数(如 ui.Info)
+    # 这些函数内部会调用 fmt.Sprintf,但在调用点看起来像是非常量格式字符串
+    disable:
+      - printf

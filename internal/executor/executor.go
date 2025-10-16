@@ -7,31 +7,38 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/alpen/alpen-cli/internal/config"
+	"github.com/kballard/go-shellquote"
+
 	"github.com/alpen/alpen-cli/internal/lifecycle"
 	"github.com/alpen/alpen-cli/internal/plugins"
+	"github.com/alpen/alpen-cli/internal/scripts"
 	"github.com/alpen/alpen-cli/internal/ui"
 )
 
 // Executor 负责执行脚本命令，并在执行前后触发生命周期事件
 type Executor struct {
-	plugins *plugins.Registry
-	logger  *log.Logger
+	plugins  *plugins.Registry
+	logger   *log.Logger
+	rootOnce sync.Once
+	rootPath string
+	rootErr  error
 }
 
-// ScriptRequest 描述一次脚本执行所需的参数
+// ScriptRequest 描述一次命令执行所需的参数
 type ScriptRequest struct {
-	GroupName  string
-	ScriptName string
-	Template   config.ScriptTemplate
-	ExtraArgs  []string
-	ExtraEnv   map[string]string
-	WorkingDir string
-	DryRun     bool
+	CommandPath []string
+	Command     string
+	BaseEnv     map[string]string
+	ExtraArgs   []string
+	ExtraEnv    map[string]string
+	WorkingDir  string
+	DryRun      bool
 }
 
 // Result 表示脚本执行结果
@@ -42,6 +49,9 @@ type Result struct {
 
 // NewExecutor 构造执行器
 func NewExecutor(registry *plugins.Registry, logger *log.Logger) *Executor {
+	if registry == nil {
+		registry = plugins.NewRegistry()
+	}
 	if logger == nil {
 		logger = log.New(os.Stdout, "[alpen] ", log.LstdFlags)
 	}
@@ -53,28 +63,43 @@ func NewExecutor(registry *plugins.Registry, logger *log.Logger) *Executor {
 
 // Execute 运行脚本并在过程中派发事件
 func (e *Executor) Execute(ctx context.Context, req ScriptRequest) (Result, error) {
-	if !req.Template.IsPlatformSupported() {
-		return Result{}, fmt.Errorf("脚本 %s/%s 不支持当前平台 %s", req.GroupName, req.ScriptName, runtime.GOOS)
+	pathLabel := strings.Join(req.CommandPath, " ")
+	if strings.TrimSpace(pathLabel) == "" {
+		pathLabel = "<anonymous>"
 	}
-	envMap := mergeEnv(req.Template.Env, req.ExtraEnv)
+	if strings.TrimSpace(req.Command) == "" {
+		err := errors.New("command 不能为空")
+		e.logger.Printf("执行失败 path=%s err=%v", pathLabel, err)
+		return Result{}, err
+	}
+	if err := e.validateScriptCommand(req); err != nil {
+		e.logger.Printf("脚本校验失败 path=%s err=%v", pathLabel, err)
+		return Result{}, err
+	}
+	envMap := mergeEnv(req.BaseEnv, req.ExtraEnv)
 	payload := &lifecycle.Context{
-		GroupName:  req.GroupName,
-		ScriptName: req.ScriptName,
-		Command:    req.Template.Command,
-		Args:       req.ExtraArgs,
-		Env:        envMap,
+		CommandPath: req.CommandPath,
+		Command:     req.Command,
+		Args:        req.ExtraArgs,
+		Env:         envMap,
 	}
+	setLegacyNames(payload, req.CommandPath)
 	if err := e.plugins.Emit(ctx, lifecycle.EventBeforeExecute, payload); err != nil {
+		e.logger.Printf("执行前置钩子失败 path=%s err=%v", pathLabel, err)
 		return Result{}, err
 	}
 	if req.DryRun {
-		fmt.Printf("%s %s\n", ui.Gray("命令:"), ui.Cyan(req.Template.Command))
+		e.logger.Printf("DryRun path=%s command=%s args=%v", pathLabel, req.Command, req.ExtraArgs)
+		fmt.Printf("%s %s\n", ui.Gray("命令:"), ui.Cyan(req.Command))
 		if len(req.ExtraArgs) > 0 {
 			fmt.Printf("%s %s\n", ui.Gray("参数:"), ui.Cyan(strings.Join(req.ExtraArgs, " ")))
 		}
-		if len(envMap) > 0 {
+		if len(req.BaseEnv) > 0 || len(req.ExtraEnv) > 0 {
 			fmt.Println(ui.Gray("环境变量:"))
-			for k, v := range req.Template.Env {
+			for k, v := range req.BaseEnv {
+				fmt.Printf("  %s=%s\n", ui.Yellow(k), ui.Gray(v))
+			}
+			for k, v := range req.ExtraEnv {
 				fmt.Printf("  %s=%s\n", ui.Yellow(k), ui.Gray(v))
 			}
 		}
@@ -83,7 +108,7 @@ func (e *Executor) Execute(ctx context.Context, req ScriptRequest) (Result, erro
 	payload.StartAt = time.Now()
 	result := Result{}
 
-	combinedCommand := buildCommand(req.Template.Command, req.ExtraArgs)
+	combinedCommand := buildCommand(req.Command, req.ExtraArgs)
 	shell, shellArgs := buildShell(combinedCommand)
 
 	cmd := exec.CommandContext(ctx, shell, shellArgs...)
@@ -104,21 +129,25 @@ func (e *Executor) Execute(ctx context.Context, req ScriptRequest) (Result, erro
 		if errors.Is(err, context.Canceled) {
 			exitCode := -1
 			payload.Err = err
-			e.plugins.Emit(ctx, lifecycle.EventError, payload) // 最好捕获但这里忽略返回值
+			_ = e.plugins.Emit(ctx, lifecycle.EventError, payload) // 忽略错误,因为主流程已被取消
+			e.logger.Printf("命令被取消 path=%s err=%v", pathLabel, err)
 			return Result{ExitCode: exitCode, Duration: result.Duration}, err
 		}
 		if errors.As(err, &exitErr) {
 			payload.Err = err
 			result.ExitCode = exitErr.ExitCode()
 			_ = e.plugins.Emit(ctx, lifecycle.EventError, payload)
+			e.logger.Printf("命令执行失败 path=%s exit=%d err=%v", pathLabel, result.ExitCode, err)
 			return result, err
 		}
 		payload.Err = err
 		_ = e.plugins.Emit(ctx, lifecycle.EventError, payload)
+		e.logger.Printf("命令执行失败 path=%s err=%v", pathLabel, err)
 		return result, err
 	}
 	result.ExitCode = 0
 	if err := e.plugins.Emit(ctx, lifecycle.EventAfterExecute, payload); err != nil {
+		e.logger.Printf("执行后置钩子失败 path=%s err=%v", pathLabel, err)
 		return result, err
 	}
 	return result, nil
@@ -139,6 +168,16 @@ func mergeEnv(base map[string]string, override map[string]string) map[string]str
 		envMap[k] = v
 	}
 	return envMap
+}
+
+func setLegacyNames(payload *lifecycle.Context, path []string) {
+	if len(path) == 0 {
+		payload.GroupName = ""
+		payload.ScriptName = ""
+		return
+	}
+	payload.GroupName = path[0]
+	payload.ScriptName = path[len(path)-1]
 }
 
 func envMapToList(envMap map[string]string) []string {
@@ -181,4 +220,38 @@ func quoteArg(arg string) string {
 	}
 	escaped := strings.ReplaceAll(arg, `'`, `'\''`)
 	return "'" + escaped + "'"
+}
+
+func (e *Executor) validateScriptCommand(req ScriptRequest) error {
+	tokens, err := shellquote.Split(req.Command)
+	if err != nil {
+		return fmt.Errorf("解析命令 %q 失败: %w", req.Command, err)
+	}
+	if len(tokens) == 0 {
+		return fmt.Errorf("命令 %q 解析后为空", req.Command)
+	}
+	token := os.ExpandEnv(tokens[0])
+	if token == "" {
+		return nil
+	}
+	scriptPath, relevant, err := scripts.ResolveCommandTarget(token, req.WorkingDir)
+	if err != nil || !relevant {
+		return err
+	}
+	root, err := e.resolveScriptsRoot()
+	if err != nil {
+		return err
+	}
+	scriptPath = filepath.Clean(scriptPath)
+	if !scripts.IsUnderRoot(scriptPath, root) {
+		return nil
+	}
+	return scripts.VerifyExecutable(scriptPath)
+}
+
+func (e *Executor) resolveScriptsRoot() (string, error) {
+	e.rootOnce.Do(func() {
+		e.rootPath, e.rootErr = scripts.ResolveRoot()
+	})
+	return e.rootPath, e.rootErr
 }

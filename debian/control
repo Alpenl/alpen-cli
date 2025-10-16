@@ -1,0 +1,19 @@
+Source: alpen-cli
+Section: utils
+Priority: optional
+Maintainer: Alpen Developer <dev@alpen.example.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.0
+Homepage: https://github.com/alpenl/alpen-cli
+
+Package: alpen-cli
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Alpen CLI - 团队脚本统一管理工具
+ Alpen CLI 提供脚本统一管理与执行能力，支持按配置驱动的脚本维护方式。
+ .
+ 主要特性:
+  - 支持多项目配置管理
+  - 交互式命令导航
+  - 参数透传与环境变量支持
+  - 生命周期钩子系统

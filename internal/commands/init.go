@@ -4,76 +4,153 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
-	"github.com/alpen/alpen-cli/internal/ui"
 	"github.com/spf13/cobra"
+
+	"github.com/alpen/alpen-cli/internal/bootstrap"
+	"github.com/alpen/alpen-cli/internal/config"
+	"github.com/alpen/alpen-cli/internal/ui"
 )
 
 // NewInitCommand 创建 init 子命令
 func NewInitCommand(deps Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "初始化默认脚本配置文件",
+		Short: "初始化默认命令配置文件",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			force, _ := cmd.Flags().GetBool("force")
-			targetDir := deps.BaseDir
-			if targetDir == "" {
-				var err error
-				targetDir, err = os.Getwd()
-				if err != nil {
-					return err
-				}
+			useLocal, _ := cmd.Flags().GetBool("local")
+			if useLocal {
+				return initLocalConfig(deps.BaseDir, force, cmd)
 			}
-			return initScripts(targetDir, force, cmd)
+			return initGlobalConfig(force, cmd)
 		},
 	}
 	cmd.Flags().Bool("force", false, "若文件已存在则覆盖")
+	cmd.Flags().BoolP("local", "l", false, "在当前项目下生成示例配置文件")
 	return cmd
 }
 
-func initScripts(baseDir string, force bool, cmd *cobra.Command) error {
-	scriptsDir := filepath.Join(baseDir, "scripts")
-	if err := os.MkdirAll(scriptsDir, 0o755); err != nil {
-		return fmt.Errorf("创建目录 %s 失败: %w", scriptsDir, err)
-	}
-	targetFile := filepath.Join(scriptsDir, "scripts.yaml")
-
+func initGlobalConfig(force bool, cmd *cobra.Command) error {
 	writer := cmd.OutOrStdout()
 
-	if _, err := os.Stat(targetFile); err == nil && !force {
-		ui.Error(writer, "配置文件已存在: %s", targetFile)
-		ui.Info(writer, "使用 %s 可覆盖已有文件", ui.Highlight("--force"))
-		return fmt.Errorf("文件 %s 已存在，如需覆盖请使用 --force", targetFile)
+	globalCfg, err := config.LoadGlobalConfig()
+	if err != nil {
+		return fmt.Errorf("读取 global.yaml 失败: %w", err)
 	}
 
-	if err := os.WriteFile(targetFile, []byte(defaultConfigTemplate), 0o644); err != nil {
-		return fmt.Errorf("写入配置文件失败: %w", err)
+	configPathHint := strings.TrimSpace(globalCfg.DefaultConfigPath)
+	if configPathHint == "" {
+		home, err := config.ResolveHomeDir()
+		if err != nil {
+			return err
+		}
+		configPathHint = filepath.Join(home, "config", "demo.yaml")
+	}
+	configPathHint = config.ExpandPath(configPathHint)
+	alreadyExists := !force && fileExists(configPathHint)
+
+	result, err := bootstrap.EnsureGlobalAssets(globalCfg, force)
+	if err != nil {
+		return err
+	}
+
+	if err := bootstrap.EnsureGlobalReadme(filepath.Dir(result.ConfigPath), force); err != nil {
+		ui.Warning(writer, "写入 README 失败: %v", err)
+	}
+
+	globalCfg.DefaultConfigPath = result.ConfigPath
+	globalCfg.ScriptsRoot = result.ScriptsDir
+	configDir := filepath.Dir(result.ConfigPath)
+	globalCfg.SearchPaths = bootstrap.UniqueStrings(append([]string{configDir}, globalCfg.SearchPaths...))
+
+	if err := bootstrap.PersistGlobalConfig(globalCfg, force); err != nil {
+		return fmt.Errorf("写入 global.yaml 失败: %w", err)
+	}
+
+	if err := config.SaveActiveConfigPath(result.ConfigPath); err != nil {
+		ui.Warning(writer, "无法记录激活配置: %v", err)
 	}
 
 	fmt.Fprintln(writer, "")
-	ui.Success(writer, "已生成示例配置文件")
-	fmt.Fprintf(writer, "  %s %s\n", ui.Gray("位置:"), ui.Cyan(targetFile))
-	fmt.Fprintln(writer, "")
-	ui.Info(writer, "可使用 %s 查看脚本列表", ui.Highlight("alpen list"))
-	ui.Info(writer, "或直接运行 %s 进入交互菜单", ui.Highlight("alpen"))
+	if alreadyExists {
+		ui.Info(writer, "检测到全局配置已存在，未执行覆盖操作")
+	} else {
+		ui.Success(writer, "已在全局目录生成示例配置")
+		fmt.Fprintf(writer, "  %s %s\n", ui.Gray("配置文件:"), ui.Cyan(result.ConfigPath))
+		fmt.Fprintf(writer, "  %s %s\n", ui.Gray("脚本目录:"), ui.Cyan(result.ScriptsDir))
+		fmt.Fprintln(writer, "")
+	}
+	if alreadyExists {
+		fmt.Fprintf(writer, "  %s %s\n", ui.Gray("配置文件:"), ui.Cyan(result.ConfigPath))
+		fmt.Fprintf(writer, "  %s %s\n", ui.Gray("脚本目录:"), ui.Cyan(result.ScriptsDir))
+		fmt.Fprintln(writer, "")
+		ui.Info(writer, "如需覆盖示例配置，可使用 %s", ui.Highlight("alpen init --force"))
+	}
+	ui.Info(writer, "后续可通过 %s 或 %s 浏览命令", ui.Highlight("alpen ls"), ui.Highlight("alpen ui"))
+	ui.Info(writer, "在项目内生成配置，可使用 %s 或 %s", ui.Highlight("alpen init -local"), ui.Highlight("alpen init -l"))
 	return nil
 }
 
-const defaultConfigTemplate = `# Alpen CLI 默认脚本配置示例
-groups:
-  build:
-    description: 构建相关命令
-    scripts:
-      webpack-build:
-        command: yarn build
-        description: 打包前端资源
-        env:
-          NODE_ENV: production
-  ops:
-    description: 运维辅助命令
-    scripts:
-      clean-cache:
-        command: rm -rf .cache
-        description: 清理缓存目录
-        platforms: [darwin, linux]
-`
+func initLocalConfig(baseDir string, force bool, cmd *cobra.Command) error {
+	writer := cmd.OutOrStdout()
+
+	configPath := localConfigPath(baseDir)
+	alreadyExists := !force && fileExists(configPath)
+
+	targetFile, err := bootstrap.EnsureLocalAssets(baseDir, force)
+	if err != nil {
+		return err
+	}
+
+	projectDir := filepath.Dir(targetFile)
+	existingActive := ""
+	if active, loadErr := config.LoadProjectActiveConfigPath(projectDir); loadErr == nil {
+		existingActive = strings.TrimSpace(active)
+	} else if !os.IsNotExist(loadErr) {
+		ui.Warning(writer, "读取项目激活配置失败: %v", loadErr)
+	}
+	if force || strings.TrimSpace(existingActive) == "" {
+		if saveErr := config.SaveProjectActiveConfigPath(projectDir, targetFile); saveErr != nil {
+			ui.Warning(writer, "记录项目激活配置失败: %v", saveErr)
+		}
+	}
+
+	fmt.Fprintln(writer, "")
+	if alreadyExists {
+		ui.Info(writer, "检测到当前项目已完成初始化")
+	} else {
+		ui.Success(writer, "已在当前项目生成示例配置")
+	}
+	fmt.Fprintf(writer, "  %s %s\n", ui.Gray("位置:"), ui.Cyan(targetFile))
+	fmt.Fprintln(writer, "")
+	if alreadyExists {
+		ui.Info(writer, "如需覆盖示例配置，可使用 %s", ui.Highlight("alpen init -local --force"))
+	}
+	ui.Info(writer, "可使用 %s 查看命令结构", ui.Highlight("alpen ls"))
+	ui.Info(writer, "可参考示例结构补充自定义命令")
+	return nil
+}
+
+func fileExists(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func localConfigPath(baseDir string) string {
+	targetDir := strings.TrimSpace(baseDir)
+	if targetDir == "" {
+		cwd, err := os.Getwd()
+		if err == nil {
+			targetDir = cwd
+		}
+	}
+	if targetDir == "" {
+		return ""
+	}
+	return filepath.Join(targetDir, ".alpen", "demo.yaml")
+}

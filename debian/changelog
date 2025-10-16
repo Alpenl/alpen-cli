@@ -1,0 +1,6 @@
+alpen-cli (0.1.0-2) jammy; urgency=medium
+
+  * 修复 distroseries 为 jammy
+  * 移除模板文件 debian/README.source
+
+ -- alpenl (init) <3311432144@qq.com>  Wed, 16 Oct 2025 21:00:00 +0800

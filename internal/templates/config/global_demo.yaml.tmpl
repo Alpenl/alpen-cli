@@ -1,0 +1,56 @@
+# Alpen CLI 全局命令示例
+#
+# 使用说明：
+# - commands 节点下的每个一级键即顶层命令名称，可按团队需要增删。
+# - 每个命令可包含描述（description）、别名（alias）、默认脚本（command）以及 actions 子命令。
+# - actions 结构与顶层命令一致，也可设置 alias / command。
+# - 脚本路径建议基于 $ALPEN_HOME 或模板变量生成，避免硬编码绝对路径。
+#
+# 下方示例涵盖常见用法：
+# 1. 顶层命令带 alias + 默认脚本（system）。
+# 2. 顶层命令直接执行 Python 脚本（tools）。
+# 3. 仅包含子命令的命令组（utilities）。
+#
+# 提示：
+# - 将此文件复制后按需修改描述、脚本路径。
+# - 若需新增环境差异，可创建 config/demo.<env>.yaml 并覆写相应命令。
+commands:
+  system:
+    # 描述：用于说明命令用途
+    description: 示例：日常系统维护脚本
+    # 别名：提供更短的调用方式（可选）
+    alias: sys
+    # 默认脚本：执行顶层命令时触发
+    command: "{{ .ScriptsRoot }}/demo.sh"
+    actions:
+      update:
+        # 描述：说明子命令作用
+        description: 示例：执行一次模拟升级
+        # 别名：子命令同样支持 alias（可选）
+        alias: up
+        # 脚本：引用 tests 目录中的示例脚本
+        command: "{{ .ScriptsRoot }}/tests/demo.sh"
+      quick-check:
+        description: 示例：运行快速自检
+        command: "{{ .ScriptsRoot }}/demo.sh"
+
+  tools:
+    # 描述：当默认脚本是 Python / Node 等其它语言时，可直接调用
+    description: 示例：运行 Python 脚本
+    # 默认脚本：调用 demo.py 并透传参数
+    command: "{{ .ScriptsRoot }}/demo.py"
+    actions:
+      help:
+        description: 查看 Python 示例脚本的帮助信息
+        command: "{{ .ScriptsRoot }}/demo.py --help"
+
+  utilities:
+    # 描述：演示仅使用子命令的场景（无默认 command）
+    description: 示例：仅包含子命令的工具集合
+    actions:
+      say-hello:
+        description: 演示：输出问候语
+        command: "echo 'Hello from Alpen CLI!'"
+      echo:
+        description: 演示：透传参数
+        command: "echo 'args:'"

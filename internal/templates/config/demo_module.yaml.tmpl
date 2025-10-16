@@ -1,0 +1,8 @@
+commands:
+  module-demo:
+    description: 示例模块化命令（位于 config/demo.conf）
+    command: "{{ .ModuleScript }}"
+    actions:
+      inspect:
+        description: 查看命令来源与脚本路径
+        command: "{{ .ModuleScript }} inspect"

@@ -3,16 +3,20 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/spf13/cobra"
 
 	"github.com/alpen/alpen-cli/internal/commands"
 	"github.com/alpen/alpen-cli/internal/config"
 	"github.com/alpen/alpen-cli/internal/executor"
 	"github.com/alpen/alpen-cli/internal/plugins"
-	"github.com/spf13/cobra"
+	"github.com/alpen/alpen-cli/internal/ui"
 )
 
 var (
@@ -21,22 +25,56 @@ var (
 	date    = "unknown"
 )
 
+const defaultConfigPath = ".alpen/demo.yaml"
+
 // rootCmd 负责定义 CLI 根命令
 var rootCmd = &cobra.Command{
 	Use:   "alpen",
 	Short: "Alpen CLI - 团队脚本统一入口",
 	Long:  "Alpen CLI 提供脚本统一管理与执行能力，支持按配置驱动的脚本维护方式。",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		showVersion, err := cmd.Flags().GetBool("version")
+		if err != nil {
+			return err
+		}
+		if showVersion {
+			printVersion(cmd.OutOrStdout())
+			return nil
+		}
+		return showWelcome(cmd)
+	},
 }
 
 // Execute 是主程序入口
 func Execute() error {
-	return rootCmd.Execute()
+	preprocessArgs()
+	start := time.Now()
+	err := rootCmd.Execute()
+	if err != nil {
+		if !commands.IsReportedError(err) {
+			writer := rootCmd.ErrOrStderr()
+			displayName := strings.Join(os.Args[1:], " ")
+			displayName = strings.TrimSpace(displayName)
+			if displayName == "" {
+				displayName = rootCmd.Name()
+			}
+			ui.BeginExecution(writer, displayName)
+			ui.EndExecution(writer)
+			ui.ExecutionSummary(writer, false, time.Since(start), translateRootError(err))
+		}
+		return err
+	}
+	return nil
 }
 
 func init() {
 	baseDir, err := os.Getwd()
 	if err != nil {
-		panic(fmt.Errorf("获取工作目录失败: %w", err))
+		fmt.Fprintf(os.Stderr, "获取工作目录失败，已回退为当前目录: %v\n", err)
+		baseDir = "."
+	}
+	if home, err := config.ResolveHomeDir(); err == nil {
+		_ = os.Setenv("ALPEN_HOME", home)
 	}
 	loader := config.NewLoader(baseDir)
 	registry := plugins.NewRegistry()
@@ -50,45 +88,40 @@ func init() {
 		BaseDir:  baseDir,
 	}
 
-	rootCmd.PersistentFlags().StringP("config", "c", "scripts/scripts.yaml", "指定脚本配置文件路径")
-	rootCmd.PersistentFlags().StringP("environment", "e", "", "指定环境名称，用于加载环境差异配置")
-	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
-		if !requiresConfig(cmd) {
-			return nil
-		}
-		if _, err := os.Stat(filepath.Join(baseDir, "scripts")); os.IsNotExist(err) {
-			return fmt.Errorf("未找到 scripts 目录，请先执行 'alpen init' 或创建配置")
-		}
-		return nil
-	}
+	rootCmd.PersistentFlags().StringP("config", "c", defaultConfigPath, "指定命令配置文件路径")
+	rootCmd.PersistentFlags().String("environment", "", "指定环境名称，用于加载环境差异配置")
+	rootCmd.PersistentFlags().BoolP("version", "v", false, "查看当前版本信息")
+	rootCmd.SilenceErrors = true
 	rootCmd.AddCommand(newVersionCmd())
 	commands.Register(rootCmd, deps)
 
-	bootstrapMenus(rootCmd, deps, loader, logger)
-
-	cobra.OnInitialize(func() {
-		configPath, err := rootCmd.PersistentFlags().GetString("config")
-		if err != nil {
-			logger.Printf("读取配置路径失败: %v", err)
-			return
-		}
-		envName, err := rootCmd.PersistentFlags().GetString("environment")
-		if err != nil {
-			logger.Printf("读取 environment 标志失败: %v", err)
-			return
-		}
-		cfg, err := loader.Load(configPath, envName)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return
+	loaded, configPathUsed, loadErr := bootstrapCommands(rootCmd, deps, loader, logger)
+	if loadErr != nil {
+		logger.Printf("初始化加载配置失败: %v", loadErr)
+	}
+	if !loaded {
+		originalRunE := rootCmd.RunE
+		rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
+			showVersion, err := cmd.Flags().GetBool("version")
+			if err != nil {
+				return err
 			}
-			logger.Printf("加载菜单配置失败: %v", err)
-			return
+			if showVersion {
+				return originalRunE(cmd, args)
+			}
+
+			writer := cmd.OutOrStdout()
+			hintPath := configPathUsed
+			if hintPath == "" {
+				hintPath = defaultConfigPath
+			}
+			ui.Warning(writer, "未检测到命令配置文件 %s", ui.Highlight(hintPath))
+			ui.Info(writer, "可执行 %s 生成默认配置示例", ui.Highlight("alpen init"))
+			ui.Info(writer, "如需自定义路径，可使用 %s 指定配置文件", ui.Highlight("--config"))
+			fmt.Fprintln(writer, "")
+			return cmd.Help()
 		}
-		if err := commands.AttachMenus(rootCmd, deps, cfg); err != nil {
-			logger.Printf("注册菜单失败: %v", err)
-		}
-	})
+	}
 }
 
 // newVersionCmd 输出版本信息
@@ -97,45 +130,48 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "查看当前版本信息",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Fprintf(cmd.OutOrStdout(), "Alpen CLI %s (commit: %s, build date: %s)\n", version, commit, date)
+			printVersion(cmd.OutOrStdout())
 		},
 	}
 }
 
-func requiresConfig(cmd *cobra.Command) bool {
-	if cmd == nil {
-		return true
-	}
-	switch cmd.Name() {
-	case "init", "version", "help":
-		return false
-	}
-	if cmd.HasParent() && cmd.Parent() != nil && cmd.Parent().Name() == "alpen" {
-		// 对子命令做同样判断
-		switch cmd.Name() {
-		case "init", "version", "help":
-			return false
-		}
-	}
-	return true
+func printVersion(writer io.Writer) {
+	fmt.Fprintf(writer, "Alpen CLI %s (commit: %s, build date: %s)\n", version, commit, date)
 }
 
-func bootstrapMenus(root *cobra.Command, deps commands.Dependencies, loader *config.Loader, logger *log.Logger) {
+func bootstrapCommands(root *cobra.Command, deps commands.Dependencies, loader *config.Loader, _ *log.Logger) (bool, string, error) {
 	configPath, envName := detectInitialFlags(os.Args[1:])
 	if configPath == "" {
-		configPath = "scripts/scripts.yaml"
+		if active, err := config.LoadActiveConfigPath(); err == nil && strings.TrimSpace(active) != "" {
+			configPath = active
+		}
+	}
+	if configPath == "" {
+		configPath = defaultConfigPath
+	}
+	expanded := config.ExpandPath(configPath)
+	if filepath.IsAbs(expanded) {
+		configPath = expanded
+	} else {
+		configPath = expanded
+		if deps.BaseDir != "" {
+			configPath = filepath.Join(deps.BaseDir, configPath)
+		}
+	}
+	if err := root.PersistentFlags().Set("config", configPath); err != nil {
+		return false, configPath, err
 	}
 	cfg, err := loader.Load(configPath, envName)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return
+			return false, configPath, nil
 		}
-		logger.Printf("初始化菜单时加载配置失败: %v", err)
-		return
+		return false, configPath, err
 	}
-	if err := commands.AttachMenus(root, deps, cfg); err != nil {
-		logger.Printf("初始化注册菜单失败: %v", err)
+	if err := commands.RegisterDynamicCommands(root, deps, cfg); err != nil {
+		return false, configPath, err
 	}
+	return true, configPath, nil
 }
 
 func detectInitialFlags(args []string) (configPath string, environment string) {
@@ -163,13 +199,6 @@ func detectInitialFlags(args []string) (configPath string, environment string) {
 			}
 		case strings.HasPrefix(arg, "--config="):
 			configPath = strings.TrimPrefix(arg, "--config=")
-		case arg == "-e":
-			if i+1 < stop {
-				environment = args[i+1]
-				i++
-			}
-		case strings.HasPrefix(arg, "-e="):
-			environment = strings.TrimPrefix(arg, "-e=")
 		case arg == "--environment":
 			if i+1 < stop {
 				environment = args[i+1]
@@ -180,4 +209,81 @@ func detectInitialFlags(args []string) (configPath string, environment string) {
 		}
 	}
 	return configPath, environment
+}
+
+// showWelcome 显示美化的欢迎页面
+func showWelcome(cmd *cobra.Command) error {
+	w := cmd.OutOrStdout()
+
+	commands := []ui.CommandInfo{
+		{Name: "env", Description: "选择并激活配置文件"},
+		{Name: "ls", Description: "快速查看配置中的命令列表"},
+		{Name: "ui", Description: "交互式命令导航 (推荐)"},
+		{Name: "init", Description: "初始化默认配置文件"},
+		{Name: "version", Description: "查看版本信息"},
+	}
+
+	ui.ShowWelcome(w, commands)
+	return nil
+}
+
+// preprocessArgs 在执行前将特殊写法转换为 CLI 可识别的命令
+func preprocessArgs() {
+	if len(os.Args) < 2 {
+		return
+	}
+	if os.Args[1] == "-e" && len(os.Args) == 2 {
+		os.Args[1] = "env"
+	}
+	for i := 1; i < len(os.Args); i++ {
+		if os.Args[i] == "-local" {
+			os.Args[i] = "--local"
+		}
+	}
+}
+
+func translateRootError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	msg := strings.TrimSpace(err.Error())
+
+	const unknownPrefix = "unknown command "
+	if strings.HasPrefix(msg, unknownPrefix) {
+		name := extractQuotedSegment(msg)
+		if name == "" && len(os.Args) > 1 {
+			name = os.Args[1]
+		}
+		name = strings.TrimSpace(name)
+		var builder strings.Builder
+		if name != "" {
+			builder.WriteString(fmt.Sprintf("未识别的命令：%s", name))
+		} else {
+			builder.WriteString("未识别的命令")
+		}
+		suggestions := rootCmd.SuggestionsFor(name)
+		if len(suggestions) > 0 {
+			builder.WriteString("\n  建议尝试：")
+			builder.WriteString(strings.Join(suggestions, "、"))
+		} else {
+			builder.WriteString("\n  建议执行：alpen ls 查看可用命令")
+		}
+		return errors.New(builder.String())
+	}
+
+	return err
+}
+
+func extractQuotedSegment(text string) string {
+	start := strings.IndexRune(text, '"')
+	if start == -1 {
+		return ""
+	}
+	rest := text[start+1:]
+	end := strings.IndexRune(rest, '"')
+	if end == -1 {
+		return ""
+	}
+	return rest[:end]
 }
