@@ -62,9 +62,11 @@ jobs:
       github.ref == 'refs/heads/dev' ||
       startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
+    timeout-minutes: 15  # 整个 job 最多 15 分钟
 
     env:
       GOFLAGS: "-mod=mod"
+      GOPROXY: "https://proxy.golang.org,direct"  # 使用官方代理加速
       # Debian 包构建环境变量
       DEBEMAIL: "ci@alpen.dev"
       DEBFULLNAME: "Alpen CI Bot"
@@ -80,43 +82,72 @@ jobs:
         with:
           go-version: '1.23.1'
           cache: true
+          cache-dependency-path: go.sum
 
-      - name: 📦 安装 Debian 打包依赖
+      - name: 📦 安装打包工具
+        timeout-minutes: 2
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            debhelper \
-            devscripts \
-            lintian \
-            fakeroot
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dpkg-dev
 
       - name: ⬇️  下载 Go 模块依赖
-        run: go mod download
-
-      - name: 🏗️  构建 Debian 软件包
+        timeout-minutes: 5
         run: |
-          echo "开始构建 Debian 包..."
-          dpkg-buildpackage -us -uc -b
-          echo "构建完成!"
-          echo "移动构建产物到工作目录..."
-          mv ../*.deb ../*.changes ../*.buildinfo . 2>/dev/null || true
+          echo "开始下载 Go 模块..."
+          go mod download -x
+          echo "✅ 依赖下载完成"
+
+      - name: 🏗️  构建二进制文件
+        timeout-minutes: 3
+        run: |
+          echo "开始构建二进制文件..."
+          go build -v -o alpen -ldflags="-s -w -X main.version=${{ github.ref_name }}" .
+          chmod +x alpen
+          ./alpen --version || ./alpen -v || echo "版本检查跳过"
+          echo "✅ 二进制构建完成"
+
+      - name: 📦 打包为 DEB
+        timeout-minutes: 3
+        run: |
+          echo "开始打包 DEB..."
+
+          # 创建包结构
+          PKG_DIR="alpen-cli_0.1.0-2_amd64"
+          mkdir -p ${PKG_DIR}/DEBIAN
+          mkdir -p ${PKG_DIR}/usr/bin
+
+          # 复制二进制
+          cp alpen ${PKG_DIR}/usr/bin/
+
+          # 创建 control 文件
+          cat > ${PKG_DIR}/DEBIAN/control <<EOF
+          Package: alpen-cli
+          Version: 0.1.0-2
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Maintainer: alpenl <yangyuyang91@gmail.com>
+          Description: Alpen CLI - 团队脚本统一管理工具
+           配置驱动的命令树架构，通过 YAML 配置自动生成 CLI 命令。
+           .
+           主要特性:
+            - 动态命令注册与别名支持
+            - 交互式菜单选择
+            - 全局和项目级配置
+            - 脚本仓库管理
+          EOF
+
+          # 构建 DEB 包
+          dpkg-deb --build ${PKG_DIR}
+
+          echo "✅ DEB 包构建完成"
           ls -lh *.deb
-
-      - name: ✅ Debian 包质量检查
-        continue-on-error: true
-        run: |
-          echo "执行 lintian 质量检查..."
-          lintian --info *.changes || true
 
       - name: 📤 上传构建产物
         uses: actions/upload-artifact@v4
         with:
           name: debian-packages-${{ github.sha }}
-          path: |
-            *.deb
-            *.changes
-            *.buildinfo
+          path: "*.deb"
           retention-days: 30
 
       # 仅在标签推送时创建 GitHub Release

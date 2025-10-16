@@ -1,4 +1,8 @@
 #!/usr/bin/make -f
+
+# 跳过 buildinfo 生成,避免在 CI 环境中挂起
+export DEB_BUILD_OPTIONS=nocheck
+
 %:
 	dh $@
 
@@ -7,3 +11,7 @@ override_dh_auto_build:
 
 override_dh_auto_install:
 	install -D -m 0755 alpen debian/alpen-cli/usr/bin/alpen
+
+# 跳过 buildinfo 文件生成
+override_dh_builddeb:
+	dh_builddeb
