@@ -6,9 +6,17 @@ Alpen CLI 是一个"配置即命令树"的统一脚本入口，使用 Go + Cobra
 
 ### 一键安装（推荐）
 
+**国内用户**（自动使用镜像加速）：
+```bash
+git clone --branch main --depth 1 https://gh-proxy.com/https://github.com/Alpenl/alpen-cli.git && cd alpen-cli && sudo bash install.sh
+```
+
+**国外用户**：
 ```bash
 curl -fsSL https://raw.githubusercontent.com/alpenl/alpen-cli/main/install.sh | sudo bash
 ```
+
+> 💡 安装脚本会自动检测网络环境，国内用户自动使用 `gh-proxy.com` 镜像加速
 
 ### 手动安装
 
@@ -24,9 +32,33 @@ curl -fsSL https://raw.githubusercontent.com/alpenl/alpen-cli/main/install.sh | 
 ```bash
 git clone https://github.com/alpenl/alpen-cli.git
 cd alpen-cli
+
+# 方式1：使用构建脚本（推荐，自动注入版本信息）
+./scripts/build.sh
+
+# 方式2：手动构建
 go build -o alpen .
 sudo mv alpen /usr/bin/
 ```
+
+> 💡 **版本管理说明**：
+> - 版本号由 Git tag 管理，不在代码中硬编码
+> - `./scripts/build.sh` 会自动从 Git 获取版本信息并注入到二进制
+> - CI/CD 构建时自动使用 tag 版本号
+
+### 安装选项
+
+安装脚本支持以下环境变量：
+
+- `CHINA_MIRROR=1`：强制使用国内镜像（即使检测到可以访问 GitHub）
+  ```bash
+  sudo CHINA_MIRROR=1 bash install.sh
+  ```
+
+- 调试模式：查看详细的下载和安装过程
+  ```bash
+  sudo bash -x install.sh
+  ```
 
 ## 快速开始
 

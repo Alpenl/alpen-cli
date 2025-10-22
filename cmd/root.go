@@ -19,9 +19,11 @@ import (
 )
 
 var (
-	version = "0.1.0" // 后续可通过编译时 ldflags 注入
-	commit  = "dev"
-	date    = "unknown"
+	// 版本信息由编译时 ldflags 注入，不应硬编码
+	// 构建命令示例: go build -ldflags="-X 'github.com/alpen/alpen-cli/cmd.version=1.0.0'"
+	version = "dev"     // 默认为 dev，由 CI/CD 或手动构建时注入
+	commit  = "unknown" // Git commit hash
+	date    = "unknown" // 构建日期
 )
 
 // rootCmd 负责定义 CLI 根命令

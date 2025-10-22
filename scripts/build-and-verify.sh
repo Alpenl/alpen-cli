@@ -24,12 +24,23 @@ echo ""
 # 2. 构建二进制
 echo -e "${YELLOW}2️⃣  构建二进制文件...${NC}"
 VERSION="0.0.0-test"
-go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o alpen .
+COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+go build -v \
+  -trimpath \
+  -ldflags="-s -w \
+    -X 'github.com/alpen/alpen-cli/cmd.version=${VERSION}' \
+    -X 'github.com/alpen/alpen-cli/cmd.commit=${COMMIT}' \
+    -X 'github.com/alpen/alpen-cli/cmd.date=${BUILD_DATE}'" \
+  -o alpen \
+  .
+
 chmod +x alpen
 
 # 验证构建
-BUILT_VERSION=$(./alpen --version 2>&1 | grep -oP 'v?\d+\.\d+\.\d+' || echo "unknown")
-echo -e "${GREEN}✓ 构建完成: ${BUILT_VERSION}${NC}"
+echo -e "${GREEN}✓ 构建完成${NC}"
+./alpen --version || echo "版本信息获取失败"
 echo ""
 
 # 3. 打包为 DEB

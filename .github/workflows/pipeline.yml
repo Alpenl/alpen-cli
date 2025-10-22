@@ -113,17 +113,25 @@ jobs:
           # 清理旧的构建产物
           rm -f alpen *.deb alpen-cli-*/ 2>/dev/null || true
 
-          # 构建二进制（静态链接，减小依赖）
+          # 获取构建信息
+          COMMIT=$(git rev-parse --short HEAD)
+          BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          # 构建二进制（注入版本信息）
           go build -v \
             -trimpath \
-            -ldflags="-s -w -X main.version=$VERSION" \
+            -ldflags="-s -w \
+              -X 'github.com/alpen/alpen-cli/cmd.version=${VERSION}' \
+              -X 'github.com/alpen/alpen-cli/cmd.commit=${COMMIT}' \
+              -X 'github.com/alpen/alpen-cli/cmd.date=${BUILD_DATE}'" \
             -o alpen \
             .
 
           chmod +x alpen
-          ./alpen --version || ./alpen -v || echo "版本检查跳过"
 
           echo "✅ 二进制构建完成"
+          echo "📋 版本信息:"
+          ./alpen --version || ./alpen -v || echo "版本检查跳过"
           ls -lh alpen
 
       - name: 📦 打包为 DEB
