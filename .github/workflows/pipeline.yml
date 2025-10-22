@@ -110,10 +110,21 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           echo "版本号: $VERSION"
 
-          go build -v -o alpen -ldflags="-s -w -X main.version=$VERSION" .
+          # 清理旧的构建产物
+          rm -f alpen *.deb alpen-cli-*/ 2>/dev/null || true
+
+          # 构建二进制（静态链接，减小依赖）
+          go build -v \
+            -trimpath \
+            -ldflags="-s -w -X main.version=$VERSION" \
+            -o alpen \
+            .
+
           chmod +x alpen
           ./alpen --version || ./alpen -v || echo "版本检查跳过"
+
           echo "✅ 二进制构建完成"
+          ls -lh alpen
 
       - name: 📦 打包为 DEB
         timeout-minutes: 3
@@ -133,9 +144,27 @@ jobs:
           PKG_DIR="alpen-cli_${VERSION}_amd64"
           mkdir -p ${PKG_DIR}/DEBIAN
           mkdir -p ${PKG_DIR}/usr/bin
+          mkdir -p ${PKG_DIR}/usr/share/doc/alpen-cli
 
-          # 复制二进制
+          # 复制二进制文件（唯一的运行时依赖）
           cp alpen ${PKG_DIR}/usr/bin/
+          chmod 755 ${PKG_DIR}/usr/bin/alpen
+
+          # 复制文档（可选）
+          if [ -f README.md ]; then
+            cp README.md ${PKG_DIR}/usr/share/doc/alpen-cli/
+          fi
+
+          # 创建 copyright 文件
+          cat > ${PKG_DIR}/usr/share/doc/alpen-cli/copyright <<EOF
+          Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+          Upstream-Name: alpen-cli
+          Source: https://github.com/alpenl/alpen-cli
+
+          Files: *
+          Copyright: $(date +%Y) alpenl <yangyuyang91@gmail.com>
+          License: MIT
+          EOF
 
           # 创建 control 文件
           cat > ${PKG_DIR}/DEBIAN/control <<EOF
@@ -155,11 +184,20 @@ jobs:
             - 脚本仓库管理
           EOF
 
+          # 验证包内容（确保没有无关文件）
+          echo "📋 DEB 包内容预览:"
+          find ${PKG_DIR} -type f | sort
+
           # 构建 DEB 包
           dpkg-deb --build ${PKG_DIR}
 
           echo "✅ DEB 包构建完成"
           ls -lh *.deb
+
+          # 验证 DEB 包内容
+          echo ""
+          echo "📦 验证 DEB 包内容:"
+          dpkg-deb --contents *.deb
 
       - name: 📤 上传构建产物
         uses: actions/upload-artifact@v4

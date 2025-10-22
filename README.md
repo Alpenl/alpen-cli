@@ -125,6 +125,27 @@ commands:
 
 > **提示**：Hooks 脚本位于 `scripts/git-hooks/` 目录，由版本控制管理，团队成员可统一更新。
 
+### 本地打包测试
+
+验证 DEB 包构建和内容，确保不包含无关文件：
+
+```bash
+# 构建并验证 DEB 包
+./scripts/build-and-verify.sh
+
+# 查看包内容
+dpkg-deb --contents alpen-cli_*.deb
+
+# 本地测试安装
+sudo dpkg -i alpen-cli_*.deb
+alpen --version
+```
+
+打包规则：
+- ✅ 仅打包 `alpen` 二进制和必要文档
+- ❌ 排除 `node_modules/`、`.git/`、`scripts/` 等开发文件
+- 📋 完整排除列表参见 `.debignore`
+
 ## 目录结构
 
 ```

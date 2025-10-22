@@ -1,0 +1,54 @@
+# DEB Package Build Exclusions
+# 打包时排除的文件和目录
+
+# 开发工具和配置
+.git/
+.github/
+.gitignore
+.golangci.yml
+.claude/
+.mcp.json
+.env*
+
+# Node.js 依赖（开发工具）
+node_modules/
+package.json
+package-lock.json
+config-editor.html
+
+# Go 构建产物
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.cover
+
+# 文档和脚本（源码级别）
+docs/
+debian/
+scripts/
+
+# IDE 和编辑器
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 日志和临时文件
+*.log
+tmp/
+cache/
+.alpen/
+
+# 打包临时文件
+*.deb
+*.tar.gz
+*.tar.xz
+alpen-cli-*/
+
+# 仅保留以下文件用于打包：
+# - alpen (二进制)
+# - README.md (文档)
