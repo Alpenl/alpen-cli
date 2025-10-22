@@ -36,13 +36,25 @@ command -v dpkg >/dev/null 2>&1 || error "此脚本仅支持 Debian/Ubuntu 系�
 detect_network() {
     # 允许手动指定使用国内镜像
     if [[ "${CHINA_MIRROR:-0}" == "1" ]]; then
+        debug "手动指定使用国内镜像"
         return 0
     fi
 
-    # 测试 GitHub API 连通性（超时 3 秒）
-    if wget --timeout=3 --tries=1 -qO- "https://api.github.com" >/dev/null 2>&1; then
-        return 1  # 国外环境，GitHub 可访问
+    # 测试 GitHub Release 文件下载速度（更准确）
+    # 尝试下载一个小文件，超时3秒
+    debug "测试 GitHub 连通性..."
+    if timeout 3 wget -q --spider "https://github.com" 2>/dev/null; then
+        # GitHub 可访问，但下载可能很慢
+        # 再测试实际下载速度
+        if timeout 3 wget -q -O /dev/null "https://github.com/favicon.ico" 2>/dev/null; then
+            debug "GitHub 下载测试通过"
+            return 1  # 国外环境，速度正常
+        else
+            debug "GitHub 访问慢，使用镜像"
+            return 0  # 虽然能访问，但很慢，使用镜像
+        fi
     else
+        debug "GitHub 无法访问，使用镜像"
         return 0  # 国内环境，需要使用镜像
     fi
 }
