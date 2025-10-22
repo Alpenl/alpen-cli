@@ -92,6 +92,39 @@ commands:
 - `go test ./...`：运行自动化测试。
 - `golangci-lint run`：静态分析与格式检查（已在 CI 中集成）。
 
+## 开发指南
+
+### Git Hooks 配置
+
+项目提供了自动化的代码质量检查 Git Hooks，每次提交时会自动运行：
+
+1. **安装 Git Hooks**（首次克隆仓库后执行）：
+   ```bash
+   ./scripts/install-hooks.sh
+   ```
+
+2. **Pre-commit Hook 会自动检查**：
+   - ✅ `go fmt` - 代码格式化检查
+   - ✅ `go vet` - 静态分析
+   - ✅ `golangci-lint` - 代码质量检查（如已安装）
+
+3. **如需跳过检查**（紧急情况）：
+   ```bash
+   git commit --no-verify
+   ```
+
+4. **推荐安装 golangci-lint**：
+   ```bash
+   curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
+   ```
+
+5. **卸载 Hooks**：
+   ```bash
+   rm .git/hooks/pre-commit
+   ```
+
+> **提示**：Hooks 脚本位于 `scripts/git-hooks/` 目录，由版本控制管理，团队成员可统一更新。
+
 ## 目录结构
 
 ```
