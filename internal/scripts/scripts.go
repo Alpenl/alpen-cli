@@ -12,27 +12,11 @@ import (
 	"github.com/alpen/alpen-cli/internal/config"
 )
 
-// ResolveRoot 加载全局配置并返回脚本根目录
+// ResolveRoot 返回 ~/.alpen/config/scripts 目录
 func ResolveRoot() (string, error) {
-	cfg, err := config.LoadGlobalConfig()
+	root, err := config.DefaultScriptsRoot()
 	if err != nil {
 		return "", err
-	}
-	return ResolveRootFromConfig(cfg)
-}
-
-// ResolveRootFromConfig 根据配置计算脚本根目录
-func ResolveRootFromConfig(cfg *config.GlobalConfig) (string, error) {
-	if cfg == nil {
-		return "", errors.New("全局配置为空")
-	}
-	root := strings.TrimSpace(cfg.ScriptsRoot)
-	if root == "" {
-		home, err := config.ResolveHomeDir()
-		if err != nil {
-			return "", err
-		}
-		root = filepath.Join(home, "config", "scripts")
 	}
 	return filepath.Clean(root), nil
 }

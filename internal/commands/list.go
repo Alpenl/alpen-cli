@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
@@ -63,18 +62,11 @@ func runRootList(cmd *cobra.Command, deps Dependencies) error {
 }
 
 func renderConfigSummary(writer io.Writer, cfg *config.Config, configPath string) {
-	fileName := filepath.Base(configPath)
-	if fileName == "" {
-		fileName = configPath
-	}
-
-	ui.Title(writer, fileName)
-	fmt.Fprintf(writer, "%s %s\n", ui.Gray("配置路径:"), ui.Cyan(configPath))
-	fmt.Fprintln(writer, "")
-	fmt.Fprintln(writer, ui.Gray("命令列表:"))
-	fmt.Fprintln(writer, "")
+	// 输出命令列表标题（带分隔线）
+	ui.MenuTitle(writer, "命令列表")
 
 	printCommandSummaries(writer, cfg)
+	fmt.Fprintln(writer, "")
 }
 
 func printCommandSummaries(writer io.Writer, cfg *config.Config) {
@@ -115,18 +107,20 @@ func writeCommandSummary(writer io.Writer, name string, spec config.CommandSpec,
 }
 
 func formatEntry(prefix, name, alias, description string, width int) string {
-	nameCell := padRight(strings.TrimSpace(name), width)
+	// 命令名用青色显示
+	nameCell := ui.Cyan(padRight(strings.TrimSpace(name), width))
+
 	var meta []string
 	if aliasText := strings.TrimSpace(alias); aliasText != "" {
-		meta = append(meta, fmt.Sprintf("别名：%s", aliasText))
+		meta = append(meta, ui.Gray(fmt.Sprintf("别名：%s", aliasText)))
 	}
 	if desc := strings.TrimSpace(description); desc != "" {
-		meta = append(meta, desc)
+		meta = append(meta, ui.Gray(desc))
 	}
 	if len(meta) == 0 {
 		return fmt.Sprintf("%s%s", prefix, nameCell)
 	}
-	return fmt.Sprintf("%s%s  %s", prefix, nameCell, strings.Join(meta, " · "))
+	return fmt.Sprintf("%s%s  %s", prefix, nameCell, ui.Gray(" · ")+strings.Join(meta, ui.Gray(" · ")))
 }
 
 func padRight(value string, width int) string {

@@ -6,14 +6,8 @@ import (
 	"text/template"
 )
 
-//go:embed config/global_demo.yaml.tmpl
-var globalCommandsRaw string
-
-//go:embed config/demo.yaml
-var localCommandsRaw string
-
-//go:embed config/global.yaml.tmpl
-var globalConfigRaw string
+//go:embed config/commands_demo.yaml.tmpl
+var defaultCommandsRaw string
 
 //go:embed config/demo_module.yaml.tmpl
 var demoModuleConfigRaw string
@@ -30,30 +24,12 @@ var demoTestScript string
 //go:embed scripts/demo_module.sh
 var demoModuleScript string
 
-//go:embed readme/global.md
-var globalReadme string
+//go:embed readme/home.md
+var homeReadme string
 
-// GlobalCommands 返回渲染后的全局命令配置模板
-func GlobalCommands(data map[string]string) (string, error) {
-	tmpl, err := template.New("global_commands").Parse(globalCommandsRaw)
-	if err != nil {
-		return "", err
-	}
-	var builder strings.Builder
-	if err := tmpl.Execute(&builder, data); err != nil {
-		return "", err
-	}
-	return builder.String(), nil
-}
-
-// LocalCommands 返回项目级命令模板
-func LocalCommands() string {
-	return localCommandsRaw
-}
-
-// GlobalConfig 渲染全局配置模板
-func GlobalConfig(data map[string]any) (string, error) {
-	tmpl, err := template.New("global_config").Parse(globalConfigRaw)
+// DefaultCommands 返回渲染后的命令示例模板
+func DefaultCommands(data map[string]string) (string, error) {
+	tmpl, err := template.New("default_commands").Parse(defaultCommandsRaw)
 	if err != nil {
 		return "", err
 	}
@@ -79,9 +55,9 @@ func DemoTest() string {
 	return demoTestScript
 }
 
-// GlobalReadme 返回全局 README 模板
-func GlobalReadme() string {
-	return globalReadme
+// HomeReadme 返回用户目录 README 模板
+func HomeReadme() string {
+	return homeReadme
 }
 
 // DemoModuleConfig 返回演示模块命令配置

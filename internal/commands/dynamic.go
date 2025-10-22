@@ -209,9 +209,7 @@ func buildCommandListSubcommand(name string, spec config.CommandSpec) *cobra.Com
 }
 
 func runCommandList(writer io.Writer, name string, spec config.CommandSpec) error {
-	ui.Title(writer, name)
-	fmt.Fprintln(writer, "")
-	fmt.Fprintln(writer, ui.Gray("命令列表:"))
+	ui.MenuTitle(writer, name)
 	fmt.Fprintln(writer, "")
 
 	commandWidth := displayWidth(strings.TrimSpace(name))

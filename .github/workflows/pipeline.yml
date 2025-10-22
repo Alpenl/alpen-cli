@@ -1,10 +1,10 @@
 name: CI/CD Pipeline
 
 # 触发条件:
-# 1. Push 到 main/dev 分支 - 运行完整质量检查,dev 分支额外构建测试包
+# 1. Push 到 main/dev 分支 - 运行完整质量检查
 # 2. Pull Request 到 main/dev - 运行完整质量检查
 # 3. 推送版本标签 (v*) - 运行检查 + 构建正式发布包
-# 4. 手动触发 (workflow_dispatch) - 运行完整流程
+# 4. 手动触发 (workflow_dispatch) - 运行完整流程 + 构建测试包
 on:
   push:
     branches: [main, dev]
@@ -57,14 +57,13 @@ jobs:
 
   # ============================================
   # Job 2: 构建 Debian 软件包
-  # 条件: dev 分支 push 或版本标签 push 或手动触发
+  # 条件: 版本标签 push 或手动触发（dev 分支仅手动触发）
   # ============================================
   build-deb:
     name: 构建 Debian 软件包
     needs: quality-check  # 依赖质量检查通过
     if: |
       github.event_name == 'workflow_dispatch' ||
-      github.ref == 'refs/heads/dev' ||
       startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
     timeout-minutes: 15  # 整个 job 最多 15 分钟
@@ -106,7 +105,12 @@ jobs:
         timeout-minutes: 3
         run: |
           echo "开始构建二进制文件..."
-          go build -v -o alpen -ldflags="-s -w -X main.version=${{ github.ref_name }}" .
+
+          # 提取版本号（去除 v 前缀）
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "版本号: $VERSION"
+
+          go build -v -o alpen -ldflags="-s -w -X main.version=$VERSION" .
           chmod +x alpen
           ./alpen --version || ./alpen -v || echo "版本检查跳过"
           echo "✅ 二进制构建完成"
@@ -116,8 +120,17 @@ jobs:
         run: |
           echo "开始打包 DEB..."
 
+          # 提取版本号（去除 v 前缀，标签 push 时用标签，否则用开发版本）
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.0.0-dev+${GITHUB_SHA:0:7}"
+          fi
+
+          echo "包版本: $VERSION"
+
           # 创建包结构
-          PKG_DIR="alpen-cli_0.1.0-2_amd64"
+          PKG_DIR="alpen-cli_${VERSION}_amd64"
           mkdir -p ${PKG_DIR}/DEBIAN
           mkdir -p ${PKG_DIR}/usr/bin
 
@@ -127,7 +140,7 @@ jobs:
           # 创建 control 文件
           cat > ${PKG_DIR}/DEBIAN/control <<EOF
           Package: alpen-cli
-          Version: 0.1.0-2
+          Version: ${VERSION}
           Section: utils
           Priority: optional
           Architecture: amd64
@@ -161,21 +174,35 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: "*.deb"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
           body: |
-            ## Alpen CLI ${{ github.ref_name }}
+            ## 📦 安装方法
 
-            ### 安装方法
+            ### 一键安装（推荐）
             ```bash
-            # 下载 .deb 文件后执行:
-            sudo dpkg -i alpen-cli_*.deb
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | sudo bash
+            ```
 
-            # 如有依赖问题,运行:
+            ### 手动安装
+            ```bash
+            # 1. 下载 .deb 包
+            wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/alpen-cli_${{ github.ref_name }}_amd64.deb
+
+            # 2. 安装
+            sudo dpkg -i alpen-cli_${{ github.ref_name }}_amd64.deb
+
+            # 3. 如有依赖问题
             sudo apt-get install -f
             ```
 
             ### 验证安装
             ```bash
-            alpen --version
+            alpen --version  # 应输出: ${{ github.ref_name }}
             ```
+
+            ---
+            **完整更新日志**: https://github.com/${{ github.repository }}/compare/${{ github.event.before }}...${{ github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

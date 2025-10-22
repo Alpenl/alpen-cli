@@ -90,17 +90,17 @@ func (e *Executor) Execute(ctx context.Context, req ScriptRequest) (Result, erro
 	}
 	if req.DryRun {
 		e.logger.Printf("DryRun path=%s command=%s args=%v", pathLabel, req.Command, req.ExtraArgs)
-		fmt.Printf("%s %s\n", ui.Gray("命令:"), ui.Cyan(req.Command))
+		ui.KeyValue(os.Stdout, "命令", req.Command)
 		if len(req.ExtraArgs) > 0 {
-			fmt.Printf("%s %s\n", ui.Gray("参数:"), ui.Cyan(strings.Join(req.ExtraArgs, " ")))
+			ui.KeyValue(os.Stdout, "参数", strings.Join(req.ExtraArgs, " "))
 		}
 		if len(req.BaseEnv) > 0 || len(req.ExtraEnv) > 0 {
-			fmt.Println(ui.Gray("环境变量:"))
+			fmt.Fprintln(os.Stdout, ui.Gray("  环境变量:"))
 			for k, v := range req.BaseEnv {
-				fmt.Printf("  %s=%s\n", ui.Yellow(k), ui.Gray(v))
+				fmt.Fprintf(os.Stdout, "    %s=%s\n", ui.Yellow(k), ui.Gray(v))
 			}
 			for k, v := range req.ExtraEnv {
-				fmt.Printf("  %s=%s\n", ui.Yellow(k), ui.Gray(v))
+				fmt.Fprintf(os.Stdout, "    %s=%s\n", ui.Yellow(k), ui.Gray(v))
 			}
 		}
 		return Result{ExitCode: 0}, nil
@@ -192,7 +192,8 @@ func buildCommand(base string, extra []string) string {
 	if len(extra) == 0 {
 		return base
 	}
-	return base + " " + joinArgs(extra)
+	// 使用 shellquote.Join 正确转义参数,防止命令注入
+	return base + " " + shellquote.Join(extra...)
 }
 
 func buildShell(command string) (string, []string) {
@@ -200,26 +201,6 @@ func buildShell(command string) (string, []string) {
 		return "cmd.exe", []string{"/C", command}
 	}
 	return "/bin/sh", []string{"-c", command}
-}
-
-func joinArgs(args []string) string {
-	quoted := make([]string, 0, len(args))
-	for _, arg := range args {
-		quoted = append(quoted, quoteArg(arg))
-	}
-	return strings.Join(quoted, " ")
-}
-
-func quoteArg(arg string) string {
-	if runtime.GOOS == "windows" {
-		escaped := strings.ReplaceAll(arg, `"`, `\"`)
-		return fmt.Sprintf(`"%s"`, escaped)
-	}
-	if !strings.ContainsAny(arg, " '\"\\") {
-		return arg
-	}
-	escaped := strings.ReplaceAll(arg, `'`, `'\''`)
-	return "'" + escaped + "'"
 }
 
 func (e *Executor) validateScriptCommand(req ScriptRequest) error {

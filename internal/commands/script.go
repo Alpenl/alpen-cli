@@ -39,7 +39,7 @@ func newScriptListCommand() *cobra.Command {
 				return err
 			}
 			writer := cmd.OutOrStdout()
-			fmt.Fprintf(writer, "%s %s\n", ui.Gray("脚本目录:"), ui.Cyan(root))
+			ui.KeyValue(writer, "脚本目录", root)
 
 			var scripts []string
 			err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -84,7 +84,7 @@ func newScriptDoctorCommand() *cobra.Command {
 				return err
 			}
 			writer := cmd.OutOrStdout()
-			fmt.Fprintf(writer, "%s %s\n", ui.Gray("脚本目录:"), ui.Cyan(root))
+			ui.KeyValue(writer, "脚本目录", root)
 
 			var issues int
 			err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {

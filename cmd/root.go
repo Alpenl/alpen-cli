@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -24,8 +23,6 @@ var (
 	commit  = "dev"
 	date    = "unknown"
 )
-
-const defaultConfigPath = ".alpen/demo.yaml"
 
 // rootCmd 负责定义 CLI 根命令
 var rootCmd = &cobra.Command{
@@ -88,10 +85,31 @@ func init() {
 		BaseDir:  baseDir,
 	}
 
-	rootCmd.PersistentFlags().StringP("config", "c", defaultConfigPath, "指定命令配置文件路径")
+	defaultConfigPath, err := config.NormalizeConfigPath("")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "计算默认配置路径失败: %v\n", err)
+		defaultConfigPath = "."
+	}
+	rootCmd.PersistentFlags().StringP("config", "c", defaultConfigPath, "指定命令配置文件路径（仅限 ~/.alpen 下的文件）")
 	rootCmd.PersistentFlags().String("environment", "", "指定环境名称，用于加载环境差异配置")
 	rootCmd.PersistentFlags().BoolP("version", "v", false, "查看当前版本信息")
 	rootCmd.SilenceErrors = true
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		path, err := cmd.Root().PersistentFlags().GetString("config")
+		if err != nil {
+			return err
+		}
+		normalized, err := config.NormalizeConfigPath(path)
+		if err != nil {
+			return err
+		}
+		if normalized != path {
+			if setErr := cmd.Root().PersistentFlags().Set("config", normalized); setErr != nil {
+				return setErr
+			}
+		}
+		return nil
+	}
 	rootCmd.AddCommand(newVersionCmd())
 	commands.Register(rootCmd, deps)
 
@@ -113,11 +131,13 @@ func init() {
 			writer := cmd.OutOrStdout()
 			hintPath := configPathUsed
 			if hintPath == "" {
-				hintPath = defaultConfigPath
+				if computed, err := config.NormalizeConfigPath(""); err == nil {
+					hintPath = computed
+				}
 			}
 			ui.Warning(writer, "未检测到命令配置文件 %s", ui.Highlight(hintPath))
 			ui.Info(writer, "可执行 %s 生成默认配置示例", ui.Highlight("alpen init"))
-			ui.Info(writer, "如需自定义路径，可使用 %s 指定配置文件", ui.Highlight("--config"))
+			ui.Info(writer, "如需切换其它配置，请确保文件位于 ~/.alpen 内并使用 %s 指定", ui.Highlight("--config"))
 			fmt.Fprintln(writer, "")
 			return cmd.Help()
 		}
@@ -146,18 +166,17 @@ func bootstrapCommands(root *cobra.Command, deps commands.Dependencies, loader *
 			configPath = active
 		}
 	}
-	if configPath == "" {
-		configPath = defaultConfigPath
-	}
-	expanded := config.ExpandPath(configPath)
-	if filepath.IsAbs(expanded) {
-		configPath = expanded
-	} else {
-		configPath = expanded
-		if deps.BaseDir != "" {
-			configPath = filepath.Join(deps.BaseDir, configPath)
+	normalized, err := config.NormalizeConfigPath(configPath)
+	if err != nil {
+		if strings.TrimSpace(configPath) != "" {
+			fmt.Fprintf(os.Stderr, "配置路径无效，将回退为默认值: %v\n", err)
+		}
+		normalized, err = config.NormalizeConfigPath("")
+		if err != nil {
+			return false, "", err
 		}
 	}
+	configPath = normalized
 	if err := root.PersistentFlags().Set("config", configPath); err != nil {
 		return false, configPath, err
 	}
@@ -234,11 +253,6 @@ func preprocessArgs() {
 	}
 	if os.Args[1] == "-e" && len(os.Args) == 2 {
 		os.Args[1] = "env"
-	}
-	for i := 1; i < len(os.Args); i++ {
-		if os.Args[i] == "-local" {
-			os.Args[i] = "--local"
-		}
 	}
 }
 

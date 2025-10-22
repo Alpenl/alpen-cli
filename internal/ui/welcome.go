@@ -48,11 +48,9 @@ func ShowWelcome(w io.Writer, commands []CommandInfo) {
 	fmt.Fprintln(w, "")
 
 	// 显示快速开始提示
-	fmt.Fprintf(w, "  %s 快速开始：%s\n",
-		IconInfo(),
+	fmt.Fprintf(w, "  • 快速开始：%s\n",
 		Highlight("alpen ui"))
-	fmt.Fprintf(w, "  %s 查看帮助：%s\n",
-		IconInfo(),
+	fmt.Fprintf(w, "  • 查看帮助：%s\n",
 		Highlight("alpen help"))
 
 	fmt.Fprintln(w, "")

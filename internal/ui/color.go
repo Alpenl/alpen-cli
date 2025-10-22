@@ -7,8 +7,6 @@ import (
 	"runtime"
 	"strings"
 	"time"
-
-	"github.com/alpen/alpen-cli/internal/ui/logo"
 )
 
 // ANSI 转义码颜色定义
@@ -52,25 +50,25 @@ func colorize(color, text string) string {
 // Success 输出成功消息（绿色）
 func Success(w io.Writer, format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintln(w, colorize(green, iconPrefix("success")+msg))
+	fmt.Fprintln(w, colorize(green, "+ "+msg))
 }
 
 // Error 输出错误消息（红色）
 func Error(w io.Writer, format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintln(w, colorize(red, iconPrefix("error")+msg))
+	fmt.Fprintln(w, colorize(red, "x "+msg))
 }
 
 // Warning 输出警告消息（黄色）
 func Warning(w io.Writer, format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintln(w, colorize(yellow, iconPrefix("warning")+msg))
+	fmt.Fprintln(w, colorize(yellow, "! "+msg))
 }
 
-// Info 输出信息消息（蓝色）
+// Info 输出信息消息（灰色）
 func Info(w io.Writer, format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintln(w, colorize(cyan, iconPrefix("info")+msg))
+	fmt.Fprintln(w, colorize(gray, "• "+msg))
 }
 
 // Prompt 输出提示符（青色加粗）
@@ -107,7 +105,7 @@ func MenuItem(w io.Writer, index int, label, description string) {
 
 // Executing 输出执行提示（带动画效果）
 func Executing(w io.Writer, scriptName string) {
-	fmt.Fprintln(w, colorize(yellow, iconPrefix("executing")+"正在执行: "+scriptName))
+	fmt.Fprintln(w, colorize(yellow, "~ 正在执行: "+scriptName))
 }
 
 // Duration 输出耗时（灰色）
@@ -135,9 +133,9 @@ func EndExecution(w io.Writer) {
 // ExecutionSummary 输出统一的脚本执行摘要
 func ExecutionSummary(w io.Writer, success bool, duration time.Duration, execErr error) {
 	if success {
-		fmt.Fprintln(w, colorize(green, iconPrefix("success")+"命令执行完成"))
+		fmt.Fprintln(w, colorize(green, "+ 命令执行完成"))
 	} else {
-		fmt.Fprintln(w, colorize(red, iconPrefix("error")+"命令执行失败"))
+		fmt.Fprintln(w, colorize(red, "x 命令执行失败"))
 	}
 
 	Duration(w, duration.String())
@@ -191,57 +189,17 @@ func Cyan(text string) string {
 	return colorize(cyan, text)
 }
 
-// IconSuccess 返回成功图标
-func IconSuccess() string { return logo.Icon("success") }
-
-// IconError 返回错误图标
-func IconError() string { return logo.Icon("error") }
-
-// IconWarning 返回警告图标
-func IconWarning() string { return logo.Icon("warning") }
-
-// IconInfo 返回信息图标
-func IconInfo() string { return logo.Icon("info") }
-
-// IconExecuting 返回执行图标
-func IconExecuting() string { return logo.Icon("executing") }
-
-// IconMenu 返回菜单图标
-func IconMenu() string { return logo.Icon("menu") }
-
-// IconCommand 返回命令图标
-func IconCommand() string { return logo.Icon("command") }
-
-// IconAction 返回动作图标
-func IconAction() string { return logo.Icon("action") }
-
-// IconSearch 返回搜索图标
-func IconSearch() string { return logo.Icon("search") }
-
-// IconExit 返回退出图标
-func IconExit() string { return logo.Icon("exit") }
-
-func iconPrefix(name string) string {
-	icon := strings.TrimSpace(logo.Icon(name))
-	if icon == "" {
-		return ""
-	}
-	return icon + " "
-}
-
 // Banner 输出简洁标题横幅
 func Banner(w io.Writer, title string) {
 	if strings.TrimSpace(title) == "" {
 		return
 	}
-	fmt.Fprintln(w, "")
 	lineWidth := len([]rune(title)) + 4
 	if lineWidth < 12 {
 		lineWidth = 12
 	}
 	fmt.Fprintln(w, colorize(cyan+bold, "  "+title))
 	fmt.Fprintln(w, colorize(gray, "  "+strings.Repeat("─", lineWidth)))
-	fmt.Fprintln(w, "")
 }
 
 // Box 输出带边框的文本块
@@ -273,4 +231,23 @@ func CommandItem(label, description string) string {
 			colorize(gray, description))
 	}
 	return colorize(cyan+bold, label)
+}
+
+// KeyValue 输出统一的键值对格式
+func KeyValue(w io.Writer, key, value string) {
+	fmt.Fprintf(w, "  %s %s\n", Gray(key+":"), Cyan(value))
+}
+
+// KeyValueSuccess 输出成功状态的键值对
+func KeyValueSuccess(w io.Writer, key, value string) {
+	fmt.Fprintf(w, "  %s %s\n", Gray(key+":"), Green(value))
+}
+
+// SectionHeader 输出简洁的节标题（青色标题 + 灰色路径说明）
+func SectionHeader(w io.Writer, title, subtitle string) {
+	fmt.Fprintln(w, Cyan(title))
+	if strings.TrimSpace(subtitle) != "" {
+		fmt.Fprintf(w, "%s %s\n", Gray("配置路径:"), Gray(subtitle))
+	}
+	fmt.Fprintln(w, "")
 }

@@ -68,10 +68,10 @@ func buildMenuOptions(cfg *config.Config) []menuOption {
 		spec := cfg.Commands[name]
 		path := []string{name}
 		if command := strings.TrimSpace(spec.Command); command != "" {
-			label := fmt.Sprintf("%s (默认)", name)
+			label := name
 			description := strings.TrimSpace(spec.Description)
 			if alias := strings.TrimSpace(spec.Alias); alias != "" {
-				description = appendDescriptor(description, fmt.Sprintf("别名：%s", alias))
+				label = fmt.Sprintf("%s (%s)", name, alias)
 			}
 			options = append(options, menuOption{
 				Label:       label,
@@ -84,15 +84,8 @@ func buildMenuOptions(cfg *config.Config) []menuOption {
 			action := spec.Actions[actionName]
 			label := fmt.Sprintf("%s %s", name, actionName)
 			description := strings.TrimSpace(action.Description)
-			if spec.Alias != "" || action.Alias != "" {
-				var aliasParts []string
-				if spec.Alias != "" {
-					aliasParts = append(aliasParts, fmt.Sprintf("主命令别名：%s", spec.Alias))
-				}
-				if action.Alias != "" {
-					aliasParts = append(aliasParts, fmt.Sprintf("子命令别名：%s", action.Alias))
-				}
-				description = appendDescriptor(description, strings.Join(aliasParts, "；"))
+			if alias := strings.TrimSpace(action.Alias); alias != "" {
+				label = fmt.Sprintf("%s %s (%s)", name, actionName, alias)
 			}
 			options = append(options, menuOption{
 				Label:       label,
@@ -123,17 +116,32 @@ func appendDescriptor(description, extra string) string {
 // buildSurveyChoices 将 menuOption 转换为 survey 显示的选项
 func buildSurveyChoices(options []menuOption) []string {
 	choices := make([]string, 0, len(options)+1)
+
+	var lastTopLevel string
 	for _, option := range options {
-		// 根据命令类型添加不同图标
-		icon := ui.IconCommand()
-		if len(option.Path) > 1 {
-			icon = ui.IconAction()
+		topLevel := option.Path[0]
+
+		// 如果是新的主命令分组，添加分组标题（仅用于子命令）
+		if len(option.Path) > 1 && topLevel != lastTopLevel {
+			lastTopLevel = topLevel
 		}
-		choiceText := fmt.Sprintf("%s %s", icon, option.Label)
+
+		// 根据命令类型添加不同前缀
+		var prefix string
+		if len(option.Path) == 1 {
+			// 主命令默认动作
+			prefix = "▪"
+		} else {
+			// 子命令
+			prefix = "  ·"
+		}
+
+		choiceText := fmt.Sprintf("%s %s", prefix, option.Label)
 		choices = append(choices, choiceText)
 	}
+
 	// 添加退出选项
-	choices = append(choices, fmt.Sprintf("%s 退出", ui.IconExit()))
+	choices = append(choices, "✘ 退出")
 	return choices
 }
 
@@ -219,6 +227,7 @@ func (s *uiSession) run() error {
 			continue
 		}
 
+		// 退出选项的索引是 len(options)
 		if index >= len(s.options) {
 			s.renderExitMessage()
 			return nil
@@ -235,25 +244,28 @@ func (s *uiSession) run() error {
 }
 
 func (s *uiSession) renderIntro() {
-	ui.RenderLogo(s.writer)
-	ui.Banner(s.writer, ui.IconMenu()+" Alpen 命令导航")
+	fmt.Fprintln(s.writer, "")
+	ui.Banner(s.writer, "☰ Alpen 命令导航")
+	fmt.Fprintln(s.writer, "")
 }
 
 func (s *uiSession) renderExitMessage() {
-	fmt.Fprintln(s.writer)
-	ui.Info(s.writer, ui.IconExit()+" 已退出交互式模式")
+	fmt.Fprintln(s.writer, "")
+	fmt.Fprintln(s.writer, "")
+	fmt.Fprintln(s.writer, ui.Yellow("    已退出"))
 }
 
 func (s *uiSession) promptMenuSelection() (int, error) {
 	choices := buildSurveyChoices(s.options)
 	prompt := &survey.Select{
-		Message: "请选择要执行的命令（支持 ↑/↓ 导航，/ 搜索，Enter 确认）:",
+		Message: "选择命令 (↑/↓ 导航 | / 搜索 | Enter 确认)",
 		Options: choices,
 		Description: func(value string, index int) string {
-			if index < len(s.options) {
-				return s.options[index].Description
+			// 退出选项不显示描述
+			if index >= len(s.options) {
+				return ""
 			}
-			return "退出交互式模式"
+			return s.options[index].Description
 		},
 		PageSize: 15,
 		Filter:   s.buildPrefixFilter(),

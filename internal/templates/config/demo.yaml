@@ -1,8 +1,0 @@
-# Alpen CLI 项目级命令示例
-#
-# 将此文件放在项目的 .alpen 目录内，结构与全局配置相同。
-# command 字段可以调用项目内脚本，或替换为 npm/yarn/python 等命令。
-commands:
-  local-demo:
-    description: 运行项目级示例脚本
-    command: "./.alpen/scripts/demo.sh"

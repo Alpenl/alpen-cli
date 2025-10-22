@@ -11,20 +11,17 @@ var (
 	menuSelectTemplate = `
 {{- define "option"}}
     {{- $desc := $.GetDescription .CurrentOpt }}
-    {{- if eq .SelectedIndex .CurrentIndex }}{{color .Config.Icons.SelectFocus.Format }}{{ .Config.Icons.SelectFocus.Text }} {{else}}{{color "default"}}  {{end}}
-    {{- .CurrentOpt.Value}}
-    {{- if ne $desc ""}}
-    {{color "cyan"}}- {{$desc}}{{color "reset"}}
-    {{- else}}{{color "reset"}}
-    {{- end}}
+    {{- if eq .SelectedIndex .CurrentIndex }}{{color "cyan"}}{{ .Config.Icons.SelectFocus.Text }} {{else}}{{color "default"}}  {{end}}
+    {{- .CurrentOpt.Value}}{{color "reset"}}
+    {{- if ne $desc ""}} {{color "240"}}- {{$desc}}{{color "reset"}}{{end}}
 {{end}}
 {{- if .ShowHelp }}{{- color .Config.Icons.Help.Format }}{{ .Config.Icons.Help.Text }} {{ .Help }}{{color "reset"}}{{"\n"}}{{end}}
-{{- color .Config.Icons.Question.Format }}{{ .Config.Icons.Question.Text }} {{color "reset"}}
+{{- color "cyan"}}▸ {{color "reset"}}
 {{- color "default+hb"}}{{ .Message }}{{color "reset"}}
-{{- if .ShowAnswer}}{{color "cyan"}} {{.Answer}}{{color "reset"}}
+{{- if .ShowAnswer}}{{color "reset"}}{{"\n"}}
 {{- else}}
 {{- if .FilterMessage}}
-{{"\n"}}{{color "yellow"}}当前过滤:{{ .FilterMessage }}{{color "reset"}}
+{{"\n"}}{{color "cyan"}}{{ .FilterMessage }}{{color "reset"}}
 {{- end}}
 {{"\n"}}
   {{- range $ix, $option := .PageEntries}}
@@ -40,35 +37,36 @@ var (
         {{- template "defaultOption" . }}
     {{- else }}
         {{- if $meta.First }}
-{{- if $meta.GapBefore }}{{"\n\n"}}{{else}}{{"\n\n"}}{{end}}  {{color "cyan"}}{{ $meta.Group }}{{color "reset"}}
+{{- if $meta.GapBefore }}{{else}}{{end}}  {{color "cyan"}}{{ $meta.Group }}{{color "reset"}}
         {{- end }}
-        {{- $display := printf "%s (%s)" $meta.Name $meta.Path -}}
         {{- if eq .SelectedIndex .CurrentIndex }}
-   {{color .Config.Icons.SelectFocus.Format }}{{ .Config.Icons.SelectFocus.Text }}{{color "reset"}}  {{$display}}
+   {{color "cyan"}}{{ .Config.Icons.SelectFocus.Text }}{{color "reset"}}  {{if $meta.Active}}{{color "green"}}{{end}}{{$meta.Name}}{{color "reset"}}
         {{- else if $meta.Active }}
-    {{color "red"}}+{{color "reset"}} {{$display}}
+      {{color "green"}}{{$meta.Name}}{{color "reset"}}
         {{- else }}
-      {{$display}}
+      {{$meta.Name}}
         {{- end }}
     {{- end }}
 {{- end }}
 {{- define "defaultOption"}}
-    {{- if eq .SelectedIndex .CurrentIndex }}{{color .Config.Icons.SelectFocus.Format }}{{ .Config.Icons.SelectFocus.Text }} {{else}}{{color "default"}}  {{end}}
-    {{- .CurrentOpt.Value}}{{ if ne ($.GetDescription .CurrentOpt) "" }} - {{color "cyan"}}{{ $.GetDescription .CurrentOpt }}{{end}}
+    {{- if eq .SelectedIndex .CurrentIndex }}{{color "cyan"}}{{ .Config.Icons.SelectFocus.Text }} {{else}}{{color "default"}}  {{end}}
+    {{- .CurrentOpt.Value}}{{ if ne ($.GetDescription .CurrentOpt) "" }} - {{color "240"}}{{ $.GetDescription .CurrentOpt }}{{end}}
     {{- color "reset"}}
 {{- end }}
 {{- define "option"}}
     {{- if metaEnabled }}{{template "envOption" .}}{{else}}{{template "defaultOption" .}}{{end}}
 {{- end }}
-{{- if .ShowHelp }}{{- color .Config.Icons.Help.Format }}{{ .Config.Icons.Help.Text }} {{ .Help }}{{color "reset"}}{{"\n"}}{{end}}
-{{- color .Config.Icons.Question.Format }}{{ .Config.Icons.Question.Text }} {{color "reset"}}
-{{- color "default+hb"}}{{ .Message }}{{color "reset"}}
-{{- if .ShowAnswer}}{{color "cyan"}} {{.Answer}}{{color "reset"}}{{"\n"}}
+{{- if .ShowHelp }}{{- color .Config.Icons.Help.Format }}{{ .Config.Icons.Help.Text }} {{ .Help }}{{color "reset"}}{{end}}
+{{- color "cyan"}}▸ {{color "reset"}}
+{{- color "default+hb"}}{{ .Message }}{{color "reset"}}{{"\n"}}
+{{- if .ShowAnswer}}{{color "reset"}}{{"\n"}}
 {{- else}}
-{{- if .FilterMessage }}{{"\n"}}{{"\n"}}{{color "cyan"}}{{ .FilterMessage }}{{color "reset"}}{{"\n"}}{{end}}
-  {{- range $ix, $option := .PageEntries}}
-    {{- template "option" $.IterateOption $ix $option}}
-  {{- end}}
+{{- if .FilterMessage }}{{"\n"}}{{color "cyan"}}{{ .FilterMessage }}{{color "reset"}}{{end}}
+{{- range $ix, $option := .PageEntries}}
+{{- if eq $ix 0 }}  {{template "option" $.IterateOption $ix $option}}
+{{- else }}{{"\n"}}  {{template "option" $.IterateOption $ix $option}}
+{{- end}}
+{{- end}}
 {{- end}}`
 )
 
@@ -90,6 +88,23 @@ type selectOptionTemplateMeta struct {
 
 func ensureMenuSelectTemplate() {
 	survey.SelectQuestionTemplate = menuSelectTemplate
+
+	// 注册模板函数
+	core.TemplateFuncsWithColor["sub"] = func(a, b int) int { return a - b }
+	core.TemplateFuncsNoColor["sub"] = func(a, b int) int { return a - b }
+	core.TemplateFuncsWithColor["len"] = func(v interface{}) int {
+		if slice, ok := v.([]interface{}); ok {
+			return len(slice)
+		}
+		return 0
+	}
+	core.TemplateFuncsNoColor["len"] = func(v interface{}) int {
+		if slice, ok := v.([]interface{}); ok {
+			return len(slice)
+		}
+		return 0
+	}
+
 	selectMetaMu.Lock()
 	selectMetaStore = nil
 	selectMetaEnabled = false

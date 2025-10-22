@@ -41,3 +41,11 @@ debian/*.log
 *.tar.xz
 *.tar.gz
 alpen-cli-*/
+docs/
+
+
+node_modules/
+.mcp.json
+config-editor.html
+package.json
+package-lock.json

@@ -97,7 +97,7 @@ commands:
 	}
 }
 
-func TestLoaderModuleOverrideProducesWarning(t *testing.T) {
+func TestLoaderModuleOverrideProducesError(t *testing.T) {
 	dir := t.TempDir()
 	basePath := filepath.Join(dir, "demo.yaml")
 	moduleDir := filepath.Join(dir, "deploy.conf")
@@ -133,29 +133,12 @@ commands:
 	}
 
 	loader := NewLoader(dir)
-	cfg, err := loader.Load("deploy.conf", "")
-	if err != nil {
-		t.Fatalf("load module config failed: %v", err)
+	_, err := loader.Load("deploy.conf", "")
+	// 应该因为配置冲突而返回错误
+	if err == nil {
+		t.Fatalf("expected error for config conflict, got nil")
 	}
-	if cfg.Commands["deploy"].Command != "echo override" {
-		t.Fatalf("expected override command, got %s", cfg.Commands["deploy"].Command)
-	}
-
-	diags := loader.Diagnostics()
-	if len(diags) == 0 {
-		t.Fatalf("expected diagnostics for override, got none")
-	}
-	if diags[0].Level != "warning" {
-		t.Fatalf("expected warning level, got %s", diags[0].Level)
-	}
-	if !strings.Contains(diags[0].Message, "deploy") {
-		t.Fatalf("expected diagnostic message to mention deploy, got %s", diags[0].Message)
-	}
-
-	if len(cfg.Diagnostics) == 0 {
-		t.Fatalf("expected config diagnostics populated")
-	}
-	if cfg.Diagnostics[0].Message != diags[0].Message {
-		t.Fatalf("config diagnostics mismatch, got %s want %s", cfg.Diagnostics[0].Message, diags[0].Message)
+	if !strings.Contains(err.Error(), "冲突") {
+		t.Fatalf("expected error message to mention conflict, got: %v", err)
 	}
 }

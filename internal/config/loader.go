@@ -85,7 +85,11 @@ func (l *Loader) Load(path string, env string) (*Config, error) {
 			if err != nil {
 				return nil, fmt.Errorf("加载环境配置失败: %w", err)
 			}
-			mergeConfig(baseConfig, envConfig, mergeOptions{})
+			if err := mergeConfig(baseConfig, envConfig, mergeOptions{
+				allowOverride: true, // 环境配置允许覆盖基础配置
+			}); err != nil {
+				return nil, fmt.Errorf("合并环境配置失败: %w", err)
+			}
 		}
 	}
 
@@ -139,12 +143,12 @@ func normalizeConfig(cfg *Config) {
 }
 
 type mergeOptions struct {
-	trackOverrides bool
-	label          string
-	collect        func(Diagnostic)
+	label         string
+	collect       func(Diagnostic)
+	allowOverride bool // 是否允许覆盖同名命令(仅用于环境配置)
 }
 
-func mergeConfig(base *Config, override *Config, opts mergeOptions) {
+func mergeConfig(base *Config, override *Config, opts mergeOptions) error {
 	if base.Commands == nil {
 		base.Commands = map[string]CommandSpec{}
 	}
@@ -158,62 +162,60 @@ func mergeConfig(base *Config, override *Config, opts mergeOptions) {
 		if baseSpec.Actions == nil {
 			baseSpec.Actions = map[string]ActionSpec{}
 		}
-		existed := baseSpec.Command != "" || len(baseSpec.Actions) > 0 || baseSpec.Alias != "" || baseSpec.Description != ""
-		overrideDetected := false
-		if overrideSpec.Alias != "" && overrideSpec.Alias != baseSpec.Alias {
-			if baseSpec.Alias != "" {
-				overrideDetected = true
+
+		// 检测命令级别的冲突
+		if overrideSpec.Command != "" && baseSpec.Command != "" && overrideSpec.Command != baseSpec.Command {
+			// 环境配置允许覆盖
+			if !opts.allowOverride {
+				return fmt.Errorf("命令 %s 冲突: %s 尝试覆盖命令定义，原来源: %s，新来源: %s",
+					name, opts.label, baseSpec.Origin.String(), overrideSpec.Origin.String())
 			}
-			baseSpec.Alias = overrideSpec.Alias
 		}
-		if overrideSpec.Description != "" && overrideSpec.Description != baseSpec.Description {
-			if baseSpec.Description != "" {
-				overrideDetected = true
-			}
-			baseSpec.Description = overrideSpec.Description
-		}
-		if overrideSpec.Command != "" && overrideSpec.Command != baseSpec.Command {
-			if baseSpec.Command != "" {
-				overrideDetected = true
-			}
-			baseSpec.Command = overrideSpec.Command
-		}
+
+		// 检测子命令(Action)级别的冲突
 		for actionName, overrideAction := range overrideSpec.Actions {
 			baseAction := baseSpec.Actions[actionName]
-			actionExisted := baseAction.Command != "" || baseAction.Description != "" || baseAction.Alias != ""
-			previousOrigin := baseAction.Origin
-			if overrideAction.Alias != "" && overrideAction.Alias != baseAction.Alias {
+			if baseAction.Command != "" && overrideAction.Command != "" && baseAction.Command != overrideAction.Command {
+				// 环境配置允许覆盖
+				if !opts.allowOverride {
+					return fmt.Errorf("子命令 %s.%s 冲突: %s 尝试覆盖子命令定义，原来源: %s，新来源: %s",
+						name, actionName, opts.label, baseAction.Origin.String(), overrideAction.Origin.String())
+				}
+			}
+		}
+
+		// 如果没有冲突，执行合并
+		if overrideSpec.Alias != "" {
+			baseSpec.Alias = overrideSpec.Alias
+		}
+		if overrideSpec.Description != "" {
+			baseSpec.Description = overrideSpec.Description
+		}
+		if overrideSpec.Command != "" {
+			baseSpec.Command = overrideSpec.Command
+		}
+
+		for actionName, overrideAction := range overrideSpec.Actions {
+			baseAction := baseSpec.Actions[actionName]
+			if overrideAction.Alias != "" {
 				baseAction.Alias = overrideAction.Alias
 			}
-			if overrideAction.Description != "" && overrideAction.Description != baseAction.Description {
+			if overrideAction.Description != "" {
 				baseAction.Description = overrideAction.Description
 			}
-			if overrideAction.Command != "" && overrideAction.Command != baseAction.Command {
+			if overrideAction.Command != "" {
 				baseAction.Command = overrideAction.Command
 			}
 			baseAction.Origin = overrideAction.Origin
 			baseSpec.Actions[actionName] = baseAction
-			if opts.trackOverrides && actionExisted && opts.collect != nil {
-				opts.collect(Diagnostic{
-					Level:   "warning",
-					Message: fmt.Sprintf("子命令 %s.%s 被 %s 覆盖，原来源: %s，新来源: %s", name, actionName, opts.label, previousOrigin.String(), overrideAction.Origin.String()),
-				})
-			}
-			if actionExisted {
-				overrideDetected = true
-			}
 		}
-		if opts.trackOverrides && existed && overrideDetected && opts.collect != nil {
-			opts.collect(Diagnostic{
-				Level:   "warning",
-				Message: fmt.Sprintf("命令 %s 被 %s 覆盖，原来源: %s，新来源: %s", name, opts.label, baseSpec.Origin.String(), overrideSpec.Origin.String()),
-			})
-		}
+
 		if overrideSpec.Origin != (SourceInfo{}) {
 			baseSpec.Origin = overrideSpec.Origin
 		}
 		base.Commands[name] = baseSpec
 	}
+	return nil
 }
 
 func registerOrigins(cfg *Config, source SourceInfo) {
@@ -279,13 +281,14 @@ func (l *Loader) loadDirectoryConfig(dir string) (*Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("加载目录 %s 的配置 %s 失败: %w", moduleName, filepath.Base(file), err)
 		}
-		mergeConfig(result, cfg, mergeOptions{
-			trackOverrides: true,
-			label:          fmt.Sprintf("%s/%s", moduleName, filepath.Base(file)),
+		if err := mergeConfig(result, cfg, mergeOptions{
+			label: fmt.Sprintf("%s/%s", moduleName, filepath.Base(file)),
 			collect: func(d Diagnostic) {
 				l.diagnostics = append(l.diagnostics, d)
 			},
-		})
+		}); err != nil {
+			return nil, fmt.Errorf("合并配置失败: %w", err)
+		}
 	}
 	return result, nil
 }
