@@ -98,21 +98,6 @@ func buildMenuOptions(cfg *config.Config) []menuOption {
 	return options
 }
 
-func appendDescriptor(description, extra string) string {
-	description = strings.TrimSpace(description)
-	extra = strings.TrimSpace(extra)
-	switch {
-	case description == "" && extra == "":
-		return ""
-	case description == "":
-		return extra
-	case extra == "":
-		return description
-	default:
-		return fmt.Sprintf("%s（%s）", description, extra)
-	}
-}
-
 // buildSurveyChoices 将 menuOption 转换为 survey 显示的选项
 func buildSurveyChoices(options []menuOption) []string {
 	choices := make([]string, 0, len(options)+1)
