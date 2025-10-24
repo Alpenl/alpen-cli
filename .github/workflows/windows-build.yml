@@ -157,46 +157,19 @@ jobs:
           Copy-Item WINDOWS_SUPPORT.md "$PACKAGE_NAME\" -ErrorAction SilentlyContinue
 
           # 创建安装说明文件
-          @"
-# Alpen CLI for Windows - Installation Guide
-
-## Quick Install
-
-1. Copy alpen.exe to any directory (Recommended: C:/Program Files/alpen/)
-2. Add to PATH environment variable:
-   - Press Win+X, select System
-   - Click Advanced system settings → Environment Variables
-   - Find Path in System variables, click Edit
-   - Click New, add the directory containing alpen.exe
-   - Save
-
-3. Verify installation:
-   cmd
-   alpen --version
-
-
-## Usage Examples
-
-cmd
-REM List commands
-alpen ls
-
-REM Switch environment variables
-alpen cc any
-REM Paste to execute (Ctrl+V)
-
-REM Show help
-alpen --help
-
-
-## More Documentation
-
-- GitHub: https://github.com/Alpenl/alpen-cli
-- Docs: https://github.com/Alpenl/alpen-cli/blob/windows-support/WINDOWS_SUPPORT.md
-
----
-Version: $env:VERSION
-"@ | Out-File -FilePath "$PACKAGE_NAME\INSTALL.txt" -Encoding UTF8
+          $installText = "# Alpen CLI for Windows - Installation Guide`n`n"
+          $installText += "## Quick Install`n`n"
+          $installText += "1. Copy alpen.exe to any directory (Recommended: C:/Program Files/alpen/)`n"
+          $installText += "2. Add to PATH environment variable`n"
+          $installText += "3. Verify: alpen --version`n`n"
+          $installText += "## Usage Examples`n`n"
+          $installText += "alpen ls       # List commands`n"
+          $installText += "alpen cc any   # Switch environment`n"
+          $installText += "alpen --help   # Show help`n`n"
+          $installText += "## Documentation`n`n"
+          $installText += "GitHub: https://github.com/Alpenl/alpen-cli`n"
+          $installText += "Version: $env:VERSION`n"
+          $installText | Out-File -FilePath "$PACKAGE_NAME\INSTALL.txt" -Encoding UTF8
 
           # 创建 ZIP 压缩包
           Compress-Archive -Path $PACKAGE_NAME -DestinationPath "$PACKAGE_NAME.zip" -Force
