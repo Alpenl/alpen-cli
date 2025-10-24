@@ -290,18 +290,34 @@ func isEnvCommand(commandPath []string) bool {
 	return false
 }
 
-// extractExportCommands 从输出中提取 export 命令
+// extractExportCommands 从输出中提取 export 命令，并根据平台转换格式
 func extractExportCommands(output string) string {
 	var exports []string
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "export ") {
-			exports = append(exports, trimmed)
+			// 转换为当前平台的格式
+			converted := convertExportCommand(trimmed)
+			exports = append(exports, converted)
 		}
 	}
 	if len(exports) == 0 {
 		return ""
 	}
 	return strings.Join(exports, "\n")
+}
+
+// convertExportCommand 将 export 命令转换为当前平台格式
+func convertExportCommand(exportCmd string) string {
+	// 移除 "export " 前缀
+	withoutExport := strings.TrimPrefix(exportCmd, "export ")
+
+	if runtime.GOOS == "windows" {
+		// Windows CMD 格式: set VAR=value
+		return "set " + withoutExport
+	}
+
+	// Linux/macOS 保持原样
+	return exportCmd
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -236,4 +237,39 @@ func TestExecutorSuccessfullyRunsCommand(t *testing.T) {
 	if result.Duration <= 0 {
 		t.Fatalf("expected positive duration")
 	}
+}
+
+func TestConvertExportCommand(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Simple export",
+			input:    "export ANTHROPIC_AUTH_TOKEN=sk-123",
+			expected: getExpectedForPlatform("ANTHROPIC_AUTH_TOKEN=sk-123"),
+		},
+		{
+			name:     "Export with URL",
+			input:    "export API_URL=https://example.com",
+			expected: getExpectedForPlatform("API_URL=https://example.com"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := convertExportCommand(tt.input)
+			if result != tt.expected {
+				t.Errorf("convertExportCommand(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func getExpectedForPlatform(varAssignment string) string {
+	if runtime.GOOS == "windows" {
+		return "set " + varAssignment
+	}
+	return "export " + varAssignment
 }
