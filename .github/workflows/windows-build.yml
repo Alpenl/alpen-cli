@@ -1,0 +1,276 @@
+name: Windows Build Pipeline
+
+# 触发条件:
+# 1. Push 到 windows-support 分支
+# 2. 推送 Windows 版本标签 (vw*)
+# 3. 手动触发
+on:
+  push:
+    branches: [windows-support]
+    tags: ["vw*"]  # Windows 专用标签，如 vw0.3.0
+  pull_request:
+    branches: [windows-support]
+  workflow_dispatch:
+
+# GitHub Actions 权限配置
+permissions:
+  contents: write  # 允许创建 Release
+  packages: write  # 允许上传构建产物
+
+jobs:
+  # ============================================
+  # Job 1: 代码质量检查 (总是运行)
+  # ============================================
+  quality-check:
+    name: 代码质量检查
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+
+      - name: 🔧 设置 Go 环境
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.1'
+          cache: true
+
+      - name: 📝 检查代码格式
+        run: |
+          files=$(gofmt -l .)
+          if [ -n "$files" ]; then
+            echo "❌ 请运行 gofmt 修复以下文件:"
+            echo "$files"
+            exit 1
+          fi
+          echo "✅ 代码格式检查通过"
+
+      - name: 🔍 静态代码检查
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: v1.61
+          args: --timeout=5m
+
+      - name: 🧪 运行单元测试
+        run: go test -v ./...
+
+  # ============================================
+  # Job 2: 构建 Windows 可执行文件
+  # ============================================
+  build-windows:
+    name: 构建 Windows 可执行文件
+    needs: quality-check
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    env:
+      GOFLAGS: "-mod=mod"
+      GOPROXY: "https://proxy.golang.org,direct"
+
+    steps:
+      - name: 📥 检出代码仓库
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔧 设置 Go 开发环境
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.1'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: ⬇️  下载 Go 模块依赖
+        timeout-minutes: 5
+        run: |
+          Write-Host "开始下载 Go 模块..."
+          go mod download
+          Write-Host "✅ 依赖下载完成"
+
+      - name: 🏗️  构建 Windows 可执行文件
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          Write-Host "开始构建 Windows 可执行文件..."
+
+          # 提取版本号
+          $VERSION = if ($env:GITHUB_REF -match 'refs/tags/vw(.+)') {
+            $matches[1]
+          } elseif ($env:GITHUB_REF -match 'refs/tags/v(.+)') {
+            $matches[1]
+          } else {
+            "0.0.0-dev+$($env:GITHUB_SHA.Substring(0,7))"
+          }
+          Write-Host "版本号: $VERSION"
+
+          # 获取构建信息
+          $COMMIT = git rev-parse --short HEAD
+          $BUILD_DATE = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+          # 构建 Windows 可执行文件
+          go build -v `
+            -trimpath `
+            -ldflags="-s -w -H windowsgui `
+              -X 'github.com/alpen/alpen-cli/cmd.version=$VERSION' `
+              -X 'github.com/alpen/alpen-cli/cmd.commit=$COMMIT' `
+              -X 'github.com/alpen/alpen-cli/cmd.date=$BUILD_DATE'" `
+            -o alpen.exe `
+            .
+
+          Write-Host "✅ Windows 可执行文件构建完成"
+
+          # 验证文件
+          if (Test-Path alpen.exe) {
+            $fileInfo = Get-Item alpen.exe
+            Write-Host "📋 文件信息:"
+            Write-Host "  大小: $([math]::Round($fileInfo.Length/1MB, 2)) MB"
+            Write-Host "  路径: $($fileInfo.FullName)"
+
+            # 尝试获取版本信息
+            try {
+              & .\alpen.exe --version
+            } catch {
+              Write-Host "版本检查跳过"
+            }
+          } else {
+            Write-Error "❌ 构建失败：未找到 alpen.exe"
+            exit 1
+          }
+
+          # 保存版本号供后续步骤使用
+          echo "VERSION=$VERSION" >> $env:GITHUB_ENV
+
+      - name: 📦 创建发布压缩包
+        shell: pwsh
+        run: |
+          Write-Host "创建发布包..."
+
+          $VERSION = $env:VERSION
+          $PACKAGE_NAME = "alpen-cli-$VERSION-windows-amd64"
+
+          # 创建发布目录
+          New-Item -ItemType Directory -Path $PACKAGE_NAME -Force | Out-Null
+
+          # 复制文件
+          Copy-Item alpen.exe "$PACKAGE_NAME\"
+          Copy-Item README.md "$PACKAGE_NAME\" -ErrorAction SilentlyContinue
+          Copy-Item WINDOWS_SUPPORT.md "$PACKAGE_NAME\" -ErrorAction SilentlyContinue
+
+          # 创建安装说明
+          @"
+# Alpen CLI for Windows - 安装说明
+
+## 快速安装
+
+1. 将 alpen.exe 复制到任意目录（推荐：C:\Program Files\alpen\）
+2. 添加到 PATH 环境变量：
+   - 按 Win+X，选择"系统"
+   - 点击"高级系统设置" → "环境变量"
+   - 在"系统变量"中找到 Path，点击"编辑"
+   - 点击"新建"，添加 alpen.exe 所在目录
+   - 确定保存
+
+3. 验证安装：
+   ```cmd
+   alpen --version
+   ```
+
+## 使用示例
+
+```cmd
+REM 查看命令列表
+alpen ls
+
+REM 切换环境变量（示例）
+alpen cc any
+REM 粘贴执行（Ctrl+V）
+
+REM 查看帮助
+alpen --help
+```
+
+## 更多文档
+
+- GitHub: https://github.com/Alpenl/alpen-cli
+- 文档: https://github.com/Alpenl/alpen-cli/blob/windows-support/WINDOWS_SUPPORT.md
+
+---
+Version: $VERSION
+"@ | Out-File -FilePath "$PACKAGE_NAME\INSTALL.txt" -Encoding UTF8
+
+          # 创建 ZIP 压缩包
+          Compress-Archive -Path $PACKAGE_NAME -DestinationPath "$PACKAGE_NAME.zip" -Force
+
+          Write-Host "✅ 发布包创建完成"
+          Get-Item "$PACKAGE_NAME.zip" | Format-List Name, Length
+
+      - name: 📤 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-executable-${{ github.sha }}
+          path: |
+            alpen.exe
+            alpen-cli-*-windows-amd64.zip
+          retention-days: 30
+
+      # 仅在标签推送时创建 GitHub Release
+      - name: 🚀 创建 GitHub Release (Windows)
+        if: startsWith(github.ref, 'refs/tags/vw')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            alpen.exe
+            alpen-cli-*-windows-amd64.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## 📦 Windows 版本安装方法
+
+            ### 快速安装
+
+            1. **下载 exe 文件**
+               - 直接下载：[alpen.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/alpen.exe)
+               - 或下载 ZIP 包并解压
+
+            2. **配置环境变量**
+               ```
+               将 alpen.exe 所在目录添加到系统 PATH
+               ```
+
+            3. **验证安装**
+               ```cmd
+               alpen --version
+               ```
+
+            ### 功能特性
+
+            - ✅ 原生 Windows 支持 (cmd.exe)
+            - ✅ 环境变量自动转换 (export → set)
+            - ✅ 剪贴板功能 (Ctrl+V)
+            - ✅ 配置文件统一管理
+
+            ### 使用示例
+
+            ```cmd
+            REM 查看命令列表
+            alpen ls
+
+            REM 切换环境变量
+            alpen cc any
+            REM 然后按 Ctrl+V 粘贴执行
+
+            REM 查看帮助
+            alpen --help
+            ```
+
+            ### 详细文档
+
+            - [Windows 支持文档](https://github.com/${{ github.repository }}/blob/windows-support/WINDOWS_SUPPORT.md)
+            - [完整 README](https://github.com/${{ github.repository }}/blob/windows-support/README.md)
+
+            ---
+            **版本**: ${{ github.ref_name }}
+            **完整更新日志**: https://github.com/${{ github.repository }}/compare/${{ github.event.before }}...${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
