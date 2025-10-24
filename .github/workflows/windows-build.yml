@@ -157,7 +157,7 @@ jobs:
           Copy-Item WINDOWS_SUPPORT.md "$PACKAGE_NAME\" -ErrorAction SilentlyContinue
 
           # 创建安装说明
-          @"
+          $installContent = @"
 # Alpen CLI for Windows - 安装说明
 
 ## 快速安装
@@ -171,13 +171,13 @@ jobs:
    - 确定保存
 
 3. 验证安装：
-   ```cmd
+   ``````cmd
    alpen --version
-   ```
+   ``````
 
 ## 使用示例
 
-```cmd
+``````cmd
 REM 查看命令列表
 alpen ls
 
@@ -187,7 +187,7 @@ REM 粘贴执行（Ctrl+V）
 
 REM 查看帮助
 alpen --help
-```
+``````
 
 ## 更多文档
 
@@ -196,7 +196,8 @@ alpen --help
 
 ---
 Version: $VERSION
-"@ | Out-File -FilePath "$PACKAGE_NAME\INSTALL.txt" -Encoding UTF8
+"@
+          $installContent | Out-File -FilePath "$PACKAGE_NAME\INSTALL.txt" -Encoding UTF8
 
           # 创建 ZIP 压缩包
           Compress-Archive -Path $PACKAGE_NAME -DestinationPath "$PACKAGE_NAME.zip" -Force
