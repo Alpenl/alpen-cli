@@ -110,7 +110,7 @@ jobs:
           # 构建 Windows 可执行文件
           go build -v `
             -trimpath `
-            -ldflags="-s -w -H windowsgui `
+            -ldflags="-s -w `
               -X 'github.com/alpen/alpen-cli/cmd.version=$VERSION' `
               -X 'github.com/alpen/alpen-cli/cmd.commit=$COMMIT' `
               -X 'github.com/alpen/alpen-cli/cmd.date=$BUILD_DATE'" `
