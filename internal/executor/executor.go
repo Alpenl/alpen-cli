@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/kballard/go-shellquote"
 
 	"github.com/alpen/alpen-cli/internal/lifecycle"
@@ -113,8 +115,11 @@ func (e *Executor) Execute(ctx context.Context, req ScriptRequest) (Result, erro
 
 	cmd := exec.CommandContext(ctx, shell, shellArgs...)
 	cmd.Env = envMapToList(envMap)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+
+	// 捕获命令输出以便复制到剪贴板
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
 	cmd.Stdin = os.Stdin
 	if req.WorkingDir != "" {
 		cmd.Dir = req.WorkingDir
@@ -123,6 +128,39 @@ func (e *Executor) Execute(ctx context.Context, req ScriptRequest) (Result, erro
 	err := cmd.Run()
 	payload.EndAt = time.Now()
 	result.Duration = payload.EndAt.Sub(payload.StartAt)
+
+	// 处理输出
+	stdoutStr := stdoutBuf.String()
+	stderrStr := stderrBuf.String()
+
+	// 如果是环境变量命令，只显示剪贴板提示，不重复输出
+	if err == nil && isEnvCommand(req.CommandPath) {
+		clipboardContent := extractExportCommands(stdoutStr)
+		if clipboardContent != "" {
+			// 复制到剪贴板
+			if clipErr := clipboard.WriteAll(clipboardContent); clipErr == nil {
+				// 简洁的提示
+				fmt.Fprintln(os.Stdout, "")
+				fmt.Fprintln(os.Stdout, ui.Green("✓ 已复制到剪贴板，请粘贴执行 (Ctrl+Shift+V):"))
+				fmt.Fprintln(os.Stdout, ui.Gray(clipboardContent))
+			} else {
+				// 复制失败，显示命令让用户手动复制
+				fmt.Fprintln(os.Stdout, "")
+				fmt.Fprintln(os.Stdout, ui.Yellow("请手动复制以下命令："))
+				fmt.Fprintln(os.Stdout, clipboardContent)
+			}
+		}
+	} else {
+		// 其他命令正常输出
+		if stdoutStr != "" {
+			fmt.Print(stdoutStr)
+		}
+	}
+
+	// 错误输出始终显示
+	if stderrStr != "" {
+		fmt.Fprint(os.Stderr, stderrStr)
+	}
 
 	var exitErr *exec.ExitError
 	if err != nil {
@@ -235,4 +273,35 @@ func (e *Executor) resolveScriptsRoot() (string, error) {
 		e.rootPath, e.rootErr = scripts.ResolveRoot()
 	})
 	return e.rootPath, e.rootErr
+}
+
+// isEnvCommand 判断是否是环境变量设置命令
+func isEnvCommand(commandPath []string) bool {
+	if len(commandPath) < 2 {
+		return false
+	}
+	// 检查是否是 cc any/yaya 或 claudecode any/yaya
+	firstCmd := commandPath[0]
+	secondCmd := commandPath[1]
+
+	if (firstCmd == "cc" || firstCmd == "claudecode") && (secondCmd == "any" || secondCmd == "yaya") {
+		return true
+	}
+	return false
+}
+
+// extractExportCommands 从输出中提取 export 命令
+func extractExportCommands(output string) string {
+	var exports []string
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "export ") {
+			exports = append(exports, trimmed)
+		}
+	}
+	if len(exports) == 0 {
+		return ""
+	}
+	return strings.Join(exports, "\n")
 }
